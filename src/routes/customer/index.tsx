@@ -2091,6 +2091,7 @@ function TablePickerBottomSheet({
                   return (
                     <motion.button
                       key={table.id}
+                      aria-label={`เลือก ${table.label}`}
                       disabled={isWalkIn || (!available && !isSelected)}
                       onClick={() => !isWalkIn && available && onSelect(table.id)}
                       className="rounded-2xl p-4 text-left relative overflow-hidden"
