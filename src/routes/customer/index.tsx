@@ -1703,7 +1703,7 @@ function HomeScreen({
               )}
             </div>
             <button
-              aria-label="ดำเนินการสั่งอาหารตามที่เลือก"
+              aria-label="สั่งอาหาร"
               onClick={() => {
                 if (!orderType) {
                   setShowTypeError(true);
