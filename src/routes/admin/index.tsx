@@ -196,30 +196,12 @@ function AdminDashboard() {
     }
   };
 
-  // 3. Fetch Ingredients (for Stock view)
+  // 3. Fetch Ingredients (for Stock view) — always reads directly from Supabase
   const fetchIngredients = async () => {
     setLoadingIngredients(true);
     try {
       const data = await getIngredients();
-      if (data && data.length > 0) {
-        setIngredients(data);
-      } else {
-        // Fallback to localStorage mock data
-        const localIng = localStorage.getItem("ran-lung-get-mock-ingredients");
-        if (localIng) {
-          setIngredients(JSON.parse(localIng));
-        } else {
-          const defaults = [
-            { id: "mock-1", name: "หมูสับ", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-2", name: "หมูกรอบ", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-3", name: "หมูชิ้น", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-4", name: "ไก่สับ", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-10", name: "ไข่ไก่", quantity: 100, unit: "pcs", min_threshold: 15, is_active: true },
-          ];
-          setIngredients(defaults);
-          localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(defaults));
-        }
-      }
+      setIngredients(data ?? []);
     } catch (err) {
       console.error("Load stock error:", err);
     } finally {
@@ -345,14 +327,15 @@ function AdminDashboard() {
     if (!item) return;
     const newQty = Math.max(0, Number(item.quantity) + amount);
 
-    const updated = ingredients.map(i => i.id === id ? { ...i, quantity: newQty } : i);
-    setIngredients(updated);
-    localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(updated));
+    // Optimistic update for instant UI feedback
+    setIngredients(prev => prev.map(i => i.id === id ? { ...i, quantity: newQty } : i));
 
     try {
       await updateIngredientStock(id, newQty);
     } catch {
-      console.warn("Supabase stock update failed.");
+      console.warn("Supabase stock update failed — reverting.");
+      // Revert optimistic update on failure
+      setIngredients(prev => prev.map(i => i.id === id ? { ...i, quantity: item.quantity } : i));
     }
   };
 
@@ -365,16 +348,6 @@ function AdminDashboard() {
       return;
     }
 
-    const newItem = {
-      id: "mock-" + Date.now(),
-      name: newIngName.trim(),
-      quantity: q,
-      unit: newIngUnit,
-      min_threshold: t,
-      is_active: true
-    };
-
-    setIngredients(prev => [newItem, ...prev]);
     setNewIngName("");
     setNewIngQty("");
     setNewIngThreshold("");
@@ -382,9 +355,11 @@ function AdminDashboard() {
 
     try {
       await addIngredient(newIngName.trim(), q, newIngUnit, t);
-      fetchIngredients();
-    } catch {
-      console.warn("Supabase insert skipped (saved locally).");
+      // Re-fetch from DB so the real row (with the real UUID) is shown
+      await fetchIngredients();
+    } catch (err) {
+      console.error("เพิ่มวัตถุดิบไม่สำเร็จ:", err);
+      alert("ไม่สามารถเพิ่มวัตถุดิบได้ กรุณาลองใหม่");
     }
   };
 
@@ -396,6 +371,7 @@ function AdminDashboard() {
       return;
     }
 
+    // Optimistic update
     setIngredients(prev => prev.map(i => i.id === id ? {
       ...i,
       name: editName.trim(),
@@ -407,8 +383,13 @@ function AdminDashboard() {
 
     try {
       await updateIngredientStock(id, q, editName.trim(), editUnit, t);
-    } catch {
-      console.warn("Supabase edit update failed.");
+      // Re-fetch to confirm DB state
+      await fetchIngredients();
+    } catch (err) {
+      console.error("Supabase edit update failed:", err);
+      alert("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
+      // Revert by re-fetching
+      await fetchIngredients();
     }
   };
 

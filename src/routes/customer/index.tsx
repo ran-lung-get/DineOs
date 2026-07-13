@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { type LiffProfile, liffLogout } from "../../lib/liff";
 import { supabase } from "../../lib/supabase";
 import { syncAuthUserToSupabase } from "../../lib/supabase.service";
+import { createStripeSession, verifyStripeSession } from "../../lib/api/stripe.functions";
 import { AnimatePresence, motion } from "motion/react";
 import { useLanguage, type Language } from "../../lib/i18n";
 import {
@@ -43,6 +44,7 @@ import {
   ArrowUpDown,
   SlidersHorizontal,
   Store,
+  QrCode,
 } from "lucide-react";
 
 // Images are served from /meal (public directory)
@@ -75,6 +77,8 @@ export type MenuItem = {
   spicy?: boolean;
   options?: { id: string; name: string; choices: { id: string; label: string; price?: number }[] }[];
   addons?: Addon[];
+  isAvailable?: boolean;
+  isSpicy?: boolean;
 };
 
 const HERO_IMG = "/thai_food_hero.jpg";
@@ -523,16 +527,82 @@ function LiffApp() {
   const [dbUser, setDbUser] = useState<any>(null);
   const [dbCustomer, setDbCustomer] = useState<any>(null);
   const [overlay, setOverlay] = useState<null | "menu" | "orderConfirm" | "payment" | "history" | "contact">(null);
+  const [stripeVerifying, setStripeVerifying] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+
+  // Stripe Redirect Handler Effect
+  useEffect(() => {
+    if (!liffReady || typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const isSuccess = params.get("payment_success") === "true";
+    const sessionId = params.get("session_id");
+
+    if (isSuccess && sessionId) {
+      async function verifyAndSave() {
+        setStripeVerifying(true);
+        try {
+          console.log("[Stripe Client] Verifying checkout session:", sessionId);
+          const result = await verifyStripeSession({ data: { sessionId: sessionId as string } });
+
+          if (result.success) {
+            const pendingStr = localStorage.getItem("ran-lung-get-pending-stripe-order");
+            if (pendingStr) {
+              const pending = JSON.parse(pendingStr);
+              console.log("[Stripe Client] Pending order restored:", pending);
+              
+              // Call saveOrderToHistory with override arguments
+              saveOrderToHistory(
+                pending.cart,
+                pending.orderType,
+                pending.selectedTable,
+                pending.address
+              );
+
+              // Clear cart, remove pending order, show success flash
+              setCart([]);
+              localStorage.removeItem("ran-lung-get-pending-stripe-order");
+              setShowSuccess(true);
+              setOverlay(null);
+              setTab("status");
+
+              setTimeout(() => {
+                setShowSuccess(false);
+              }, 2000);
+            } else {
+              setStripeError("ไม่พบข้อมูลคำสั่งซื้อที่รอดำเนินการ กรุณาตรวจสอบประวัติการสั่งซื้อของคุณ (Pending order details not found)");
+            }
+          } else {
+            setStripeError(result.message || "การชำระเงินไม่ผ่านการตรวจสอบความถูกต้อง (Stripe verification failed)");
+          }
+        } catch (err: any) {
+          console.error("[Stripe Client] Error verifying Stripe session:", err);
+          setStripeError(err?.message || "ระบบไม่สามารถตรวจสอบความถูกต้องของการชำระเงินได้");
+        } finally {
+          setStripeVerifying(false);
+          // Clean parameters from URL
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }
+      }
+      verifyAndSave();
+    } else if (params.get("payment_cancelled") === "true") {
+      setStripeError("การชำระเงินผ่าน Stripe ถูกยกเลิก");
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, [liffReady]);
   const [sidebar, setSidebar] = useState(false);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(MENU);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [editingCartLine, setEditingCartLine] = useState<CartLine | null>(null);
   const selectedItemToEdit = useMemo(() => {
     if (editingCartLine) {
-      return MENU.find((m) => m.id === editingCartLine.itemId) || null;
+      return menuItems.find((m) => m.id === editingCartLine.itemId) || null;
     }
     return null;
-  }, [editingCartLine]);
+  }, [editingCartLine, menuItems]);
   const [cartDrawer, setCartDrawer] = useState(false);
   const [orderType, setOrderType] = useState<OrderType | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -608,6 +678,42 @@ function LiffApp() {
 
   // Fetch ingredients and recipes from Supabase with real-time sync
   useEffect(() => {
+    async function loadMenu() {
+      try {
+        const { data: dbItems, error } = await supabase
+          .from("menu_items")
+          .select("*")
+          .order("sort_order");
+        if (!error && dbItems && dbItems.length > 0) {
+          const mapped = dbItems.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            desc: item.description || "",
+            price: Number(item.price),
+            image: item.image || "",
+            category: item.category,
+            isAvailable: item.is_available ?? true,
+            isSpicy: item.is_spicy ?? false,
+            options: item.options || undefined,
+            addons: item.addons || undefined
+          }));
+          setMenuItems(mapped);
+          localStorage.setItem("ran-lung-get-menu-items", JSON.stringify(mapped));
+        } else {
+          const localMenu = localStorage.getItem("ran-lung-get-menu-items");
+          if (localMenu) {
+            setMenuItems(JSON.parse(localMenu));
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load menu from Supabase:", err);
+        const localMenu = localStorage.getItem("ran-lung-get-menu-items");
+        if (localMenu) {
+          setMenuItems(JSON.parse(localMenu));
+        }
+      }
+    }
+
     async function loadStock() {
       try {
         const { data: ingData } = await supabase.from("ingredients").select("*");
@@ -648,6 +754,7 @@ function LiffApp() {
         }
       }
     }
+    loadMenu();
     loadStock();
 
     const handleStorageChange = (e: StorageEvent) => {
@@ -658,8 +765,23 @@ function LiffApp() {
           console.error("Storage sync parse error:", err);
         }
       }
+      if (e.key === "ran-lung-get-menu-items" && e.newValue) {
+        try {
+          setMenuItems(JSON.parse(e.newValue));
+        } catch (err) {
+          console.error("Storage sync parse error:", err);
+        }
+      }
     };
     window.addEventListener("storage", handleStorageChange);
+
+    // Subscribe to menu changes
+    const chMenu = supabase
+      .channel("menu-items-realtime-customer")
+      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
+        loadMenu();
+      })
+      .subscribe();
 
     // Subscribe to real-time changes on ingredients
     const chIng = supabase
@@ -679,6 +801,7 @@ function LiffApp() {
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
+      supabase.removeChannel(chMenu);
       supabase.removeChannel(chIng);
       supabase.removeChannel(chRec);
     };
@@ -773,15 +896,25 @@ function LiffApp() {
   const addToCart = (line: CartLine) => setCart((c) => [...c, line]);
   const removeLine = (id: string) => setCart((c) => c.filter((l) => l.id !== id));
 
-  const saveOrderToHistory = () => {
-    if (cart.length === 0) return;
+  const saveOrderToHistory = (
+    customCart?: CartLine[],
+    customOrderType?: OrderType,
+    customSelectedTable?: string | null,
+    customAddress?: string
+  ) => {
+    const activeCart = customCart || cart;
+    const activeOrderType = customOrderType || orderType;
+    const activeSelectedTable = customSelectedTable !== undefined ? customSelectedTable : selectedTable;
+    const activeAddress = customAddress !== undefined ? customAddress : address;
+
+    if (activeCart.length === 0) return;
     const orderNum = `#AK-${Math.floor(2848 + Math.random() * 100)}`;
-    const selectedTableObj = tables.find((t) => t.id === selectedTable);
-    const tableNumStr = orderType === "dine-in" && selectedTableObj ? selectedTableObj.label : undefined;
+    const selectedTableObj = tables.find((t) => t.id === activeSelectedTable);
+    const tableNumStr = activeOrderType === "dine-in" && selectedTableObj ? selectedTableObj.label : undefined;
 
     // Calculate queue number for takeaway
     let takeawayQueueNum: string | undefined = undefined;
-    if (orderType === "takeaway") {
+    if (activeOrderType === "takeaway") {
       const currentQueueCounter = localStorage.getItem("ran-lung-get-takeaway-queue-counter");
       let nextQueue = 1;
       if (currentQueueCounter) {
@@ -794,16 +927,19 @@ function LiffApp() {
       takeawayQueueNum = `Q-${String(nextQueue).padStart(2, "0")}`;
     }
 
+    const activeSubtotal = activeCart.reduce((s, l) => s + l.price * l.qty, 0);
+    const activeDeliveryFee = activeOrderType === "delivery" ? 40 : 0;
+
     const newOrder: OrderHistory = {
       id: `hist_${Date.now()}`,
       orderNumber: orderNum,
       date: new Date().toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) + " · " + new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-      items: cart.map((l) => ({ name: l.name, qty: l.qty, price: l.price, image: l.image })),
-      subtotal,
-      delivery: deliveryFee,
-      total: subtotal + deliveryFee,
+      items: activeCart.map((l) => ({ name: l.name, qty: l.qty, price: l.price, image: l.image })),
+      subtotal: activeSubtotal,
+      delivery: activeDeliveryFee,
+      total: activeSubtotal + activeDeliveryFee,
       status: "รอรับออเดอร์",
-      orderType: orderType || "delivery",
+      orderType: activeOrderType || "delivery",
       tableNumber: tableNumStr,
       queueNumber: takeawayQueueNum,
     };
@@ -813,15 +949,15 @@ function LiffApp() {
     setActiveOrderNumber(orderNum);
     setHasActiveOrder(true);
 
-    if (orderType === "dine-in" && selectedTable) {
+    if (activeOrderType === "dine-in" && activeSelectedTable) {
       setTables((prev) =>
-        prev.map((t) => (t.id === selectedTable ? { ...t, status: "occupied" } : t))
+        prev.map((t) => (t.id === activeSelectedTable ? { ...t, status: "occupied" } : t))
       );
       // Update table status in Supabase to occupied
       void (supabase as any)
         .from("restaurant_tables")
         .update({ status: "occupied" })
-        .eq("id", selectedTable);
+        .eq("id", activeSelectedTable);
     }
 
     // Push order to Supabase for real-time Staff Dashboard
@@ -856,13 +992,13 @@ function LiffApp() {
         user_id: finalUserId,
         customer_id: finalCustomerId,
         line_user_id: profile?.userId || null,
-        order_type: orderType || "delivery",
+        order_type: activeOrderType || "delivery",
         status: "pending",
-        subtotal: subtotal,
-        delivery_fee: deliveryFee,
-        total: subtotal + deliveryFee,
+        subtotal: activeSubtotal,
+        delivery_fee: activeDeliveryFee,
+        total: activeSubtotal + activeDeliveryFee,
         table_number: tableNumStr || null,
-        delivery_address: orderType === "delivery" ? address : null,
+        delivery_address: activeOrderType === "delivery" ? activeAddress : null,
         special_instructions: null,
         created_at: new Date().toISOString()
       });
@@ -974,6 +1110,7 @@ function LiffApp() {
             >
               {tab === "home" && (
                 <HomeScreen
+                  menuItems={menuItems}
                   onOpenSidebar={() => setSidebar(true)}
                   orderType={orderType}
                   isCurrentlyClosed={isCurrentlyClosed}
@@ -992,6 +1129,7 @@ function LiffApp() {
                   tables={tables}
                   onOpenTablePicker={() => setShowTablePicker(true)}
                   activeOrderType={orderHistory.find((o) => o.orderNumber === activeOrderNumber)?.orderType}
+                  activeOrderStatus={orderHistory.find((o) => o.orderNumber === activeOrderNumber)?.status}
                   address={address}
                   setAddress={setAddress}
                   addressType={addressType}
@@ -1043,6 +1181,7 @@ function LiffApp() {
           {overlay === "menu" && (
             <MenuOverlay
               key="menu"
+              menuItems={menuItems}
               onBack={() => setOverlay(null)}
               onPickItem={(it) => setSelectedItem(it)}
               onOpenCart={() => setCartDrawer(true)}
@@ -1066,6 +1205,12 @@ function LiffApp() {
             <PaymentOverlay
               key="pay"
               total={subtotal + deliveryFee}
+              cart={cart}
+              orderType={orderType || "delivery"}
+              deliveryFee={deliveryFee}
+              subtotal={subtotal}
+              selectedTable={selectedTable}
+              address={address}
               onBack={() => setOverlay("orderConfirm")}
               onSuccess={() => {
                 saveOrderToHistory();
@@ -1501,6 +1646,7 @@ function FlagIcon({ lang }: { lang: string }) {
 }
 
 function HomeScreen({
+  menuItems,
   onOpenSidebar,
   orderType,
   setOrderType,
@@ -1517,6 +1663,7 @@ function HomeScreen({
   tables,
   onOpenTablePicker,
   activeOrderType,
+  activeOrderStatus,
   address,
   setAddress,
   addressType,
@@ -1530,6 +1677,7 @@ function HomeScreen({
   isCurrentlyClosed,
   bypassRealClosed,
 }: {
+  menuItems: MenuItem[];
   onOpenSidebar: () => void;
   orderType: OrderType | null;
   setOrderType: (m: OrderType | null) => void;
@@ -1546,6 +1694,7 @@ function HomeScreen({
   tables: { id: string; label: string; status: string }[];
   onOpenTablePicker: () => void;
   activeOrderType?: OrderType;
+  activeOrderStatus?: string;
   address: string;
   setAddress: (val: string) => void;
   addressType: "home" | "work" | "dorm";
@@ -1744,6 +1893,7 @@ function HomeScreen({
               orderNumber={activeOrderNumber}
               onGoToStatus={onGoToStatus}
               orderType={activeOrderType || "delivery"}
+              status={activeOrderStatus}
             />
           </motion.div>
         )}
@@ -1888,7 +2038,7 @@ function HomeScreen({
           </button>
           <div ref={scrollRef} className="-mx-5 px-10 overflow-x-auto no-scrollbar scroll-smooth">
             <div className="flex gap-4">
-              {MENU.filter((m) => m.category !== "drinks" && m.category !== "dessert").map((m, i) => (
+              {menuItems.filter((m) => m.category !== "drinks" && m.category !== "dessert").map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, y: 12 }}
@@ -2640,12 +2790,14 @@ function MenuOverlay({
   onOpenCart,
   totalQty,
   subtotal,
+  menuItems,
 }: {
   onBack: () => void;
   onPickItem: (m: MenuItem) => void;
   onOpenCart: () => void;
   totalQty: number;
   subtotal: number;
+  menuItems: MenuItem[];
 }) {
   const [activeCat, setActiveCat] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -2662,10 +2814,10 @@ function MenuOverlay({
   // Filter and sort items dynamically
   const filteredAndSortedItems = useMemo(() => {
     let list = activeCat === "all"
-      ? MENU.filter((m) => m.category === "signature")
+      ? menuItems.filter((m) => m.category === "signature")
       : activeCat === "signature"
-        ? MENU.filter((m) => m.category !== "drinks" && m.category !== "dessert")
-        : MENU.filter((m) => m.category === activeCat);
+        ? menuItems.filter((m) => m.category !== "drinks" && m.category !== "dessert")
+        : menuItems.filter((m) => m.category === activeCat);
 
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
@@ -3188,10 +3340,13 @@ function OrderConfirmOverlay({
             }
             onProceed();
           }}
-          className="w-full h-12 rounded-full font-semibold flex items-center justify-center gap-2"
-          style={{ background: BRAND, color: "white" }}
+          className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+          style={{
+            background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
+          }}
         >
-          <CreditCard size={16} /> ไปยังช่องทางชำระเงิน · ฿{grand}
+          <CreditCard size={18} />
+          <span>ชำระผ่าน Stripe · ฿{grand.toLocaleString()}</span>
         </button>
       </div>
     </motion.div>
@@ -3214,15 +3369,31 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 // ─────────────────────────────────────────────────────────────
 function PaymentOverlay({
   total,
+  cart,
+  orderType,
+  deliveryFee,
+  subtotal,
+  selectedTable,
+  address,
   onBack,
   onSuccess,
 }: {
   total: number;
+  cart: CartLine[];
+  orderType: OrderType;
+  deliveryFee: number;
+  subtotal: number;
+  selectedTable: string;
+  address: string;
   onBack: () => void;
   onSuccess: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [slip, setSlip] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"promptpay" | "stripe">("promptpay");
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeErrorMsg, setStripeErrorMsg] = useState<string | null>(null);
+
   const fileRef = useRef<HTMLInputElement>(null);
   const PROMPTPAY = "089-123-4567";
 
@@ -3239,6 +3410,49 @@ function PaymentOverlay({
     setSlip(url);
   };
 
+  const handleStripeCheckout = async () => {
+    setStripeLoading(true);
+    setStripeErrorMsg(null);
+    try {
+      // 1. Save state to localStorage so we can restore it on redirect back
+      const pendingOrder = {
+        cart,
+        orderType,
+        selectedTable,
+        address,
+      };
+      localStorage.setItem("ran-lung-get-pending-stripe-order", JSON.stringify(pendingOrder));
+
+      // 2. Call server function to create checkout session
+      const origin = window.location.origin;
+      const result = await createStripeSession({
+        data: {
+          cart: cart.map(l => ({
+            name: l.name,
+            price: l.price,
+            qty: l.qty,
+            image: l.image || null,
+          })),
+          subtotal,
+          deliveryFee,
+          orderType,
+          origin,
+        }
+      });
+
+      if (result.url) {
+        // 3. Redirect to Stripe Checkout or mock Sandbox page
+        window.location.href = result.url;
+      } else {
+        throw new Error("ไม่สามารถสร้าง URL สำหรับการชำระเงินได้");
+      }
+    } catch (err: any) {
+      console.error("[Stripe] Checkout error:", err);
+      setStripeErrorMsg(err?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อกับ Stripe");
+      setStripeLoading(false);
+    }
+  };
+
   return (
     <motion.div
       initial={{ x: "100%" }}
@@ -3247,6 +3461,7 @@ function PaymentOverlay({
       transition={{ type: "tween", duration: 0.3 }}
       className="absolute inset-0 z-50 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-32"
     >
+      {/* Header */}
       <div className="px-5 pt-5 pb-6" style={{ background: BRAND, color: "white" }}>
         <div className="flex items-center gap-3">
           <button
@@ -3255,112 +3470,230 @@ function PaymentOverlay({
           >
             <ChevronLeft size={20} color={GOLD} />
           </button>
-          <h1 className="text-lg font-bold">ชำระค่าอาหารผ่านพร้อมเพย์</h1>
+          <h1 className="text-lg font-bold">ชำระเงินค่าอาหาร</h1>
         </div>
       </div>
 
-      <div className="px-5 -mt-3 space-y-4">
-        <div className="bg-white rounded-2xl p-6 shadow-soft flex flex-col items-center">
-          <div className="px-3 py-1 rounded-md text-[10px] font-bold tracking-widest" style={{ background: "#003d6b", color: "white" }}>
-            PROMPTPAY
-          </div>
-          <div className="mt-4 rounded-2xl p-3 bg-white border-2" style={{ borderColor: "#f1ece4" }}>
-            <MockQR />
-          </div>
-          <p className="mt-3 text-xs" style={{ color: INK_MUTED }}>
-            ยอดที่ต้องชำระ
-          </p>
-          <p className="text-3xl font-bold" style={{ color: BRAND }}>
-            ฿{total.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 shadow-soft">
-          <p className="text-xs" style={{ color: INK_MUTED }}>
-            หมายเลขพร้อมเพย์
-          </p>
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-lg font-bold tracking-wide" style={{ color: BRAND }}>
-              {PROMPTPAY}
-            </p>
-            <AnimatePresence mode="wait">
-              {copied ? (
-                <motion.button
-                  key="ok"
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
-                  style={{ background: "#dcfce7", color: "#16a34a" }}
-                >
-                  <Check size={14} /> คัดลอกแล้ว
-                </motion.button>
-              ) : (
-                <motion.button
-                  key="copy"
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  onClick={handleCopy}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
-                  style={{ background: "#fff2d6", color: BRAND }}
-                >
-                  <Copy size={14} /> คัดลอก
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-sm font-semibold mb-2" style={{ color: BRAND }}>
-            แนบหลักฐานการโอน
-          </p>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+      {/* Tabs */}
+      <div className="px-5 -mt-4">
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 shadow-soft">
           <button
-            onClick={() => fileRef.current?.click()}
-            className="relative w-full rounded-2xl border-2 border-dashed overflow-hidden"
+            onClick={() => setPaymentMethod("promptpay")}
+            className="flex-1 py-3 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
             style={{
-              borderColor: slip ? "transparent" : "#cbd5d8",
-              background: slip ? "#000" : "white",
-              minHeight: 200,
+              background: paymentMethod === "promptpay" ? BRAND : "transparent",
+              color: paymentMethod === "promptpay" ? "white" : BRAND,
             }}
           >
-            {slip ? (
-              <>
-                <img src={slip} alt="slip" className="w-full h-56 object-contain" />
-                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
-                  <span className="text-xs font-semibold text-white">เปลี่ยนไฟล์</span>
-                </div>
-              </>
-            ) : (
-              <div className="py-12 flex flex-col items-center gap-2">
-                <div className="grid h-12 w-12 place-items-center rounded-full" style={{ background: "#fff2d6" }}>
-                  <Upload size={20} color={BRAND} />
-                </div>
-                <p className="text-sm font-medium" style={{ color: BRAND }}>
-                  แตะเพื่ออัปโหลดสลิป
-                </p>
-                <p className="text-xs" style={{ color: INK_MUTED }}>
-                  JPG / PNG ไม่เกิน 5MB
-                </p>
-              </div>
-            )}
+            <QrCode size={14} /> โอนเงินพร้อมเพย์
+          </button>
+          <button
+            onClick={() => setPaymentMethod("stripe")}
+            className="flex-1 py-3 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
+            style={{
+              background: paymentMethod === "stripe" ? BRAND : "transparent",
+              color: paymentMethod === "stripe" ? "white" : BRAND,
+            }}
+          >
+            <CreditCard size={14} /> บัตรเครดิต / Stripe
           </button>
         </div>
       </div>
 
-      <div className="px-5 pb-8">
-        <div className="mt-4">
-          <button
-            onClick={onSuccess}
-            disabled={!slip}
-            className="w-full h-12 rounded-full font-semibold disabled:opacity-50"
-            style={{ background: BRAND, color: "white" }}
-          >
-            ยืนยันการชำระเงินเรียบร้อย
-          </button>
-        </div>
+      <div className="px-5 mt-4 space-y-4">
+        {paymentMethod === "promptpay" ? (
+          <>
+            {/* PromptPay Content */}
+            <div className="bg-white rounded-2xl p-6 shadow-soft flex flex-col items-center">
+              <div className="px-3 py-1 rounded-md text-[10px] font-bold tracking-widest" style={{ background: "#003d6b", color: "white" }}>
+                PROMPTPAY
+              </div>
+              <div className="mt-4 rounded-2xl p-3 bg-white border-2" style={{ borderColor: "#f1ece4" }}>
+                <MockQR />
+              </div>
+              <p className="mt-3 text-xs" style={{ color: INK_MUTED }}>
+                ยอดที่ต้องชำระ
+              </p>
+              <p className="text-3xl font-bold" style={{ color: BRAND }}>
+                ฿{total.toLocaleString()}
+              </p>
+            </div>
+
+            <div className="bg-white rounded-2xl p-4 shadow-soft">
+              <p className="text-xs" style={{ color: INK_MUTED }}>
+                หมายเลขพร้อมเพย์
+              </p>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className="text-lg font-bold tracking-wide" style={{ color: BRAND }}>
+                  {PROMPTPAY}
+                </p>
+                <AnimatePresence mode="wait">
+                  {copied ? (
+                    <motion.button
+                      key="ok"
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
+                      style={{ background: "#dcfce7", color: "#16a34a" }}
+                    >
+                      <Check size={14} /> คัดลอกแล้ว
+                    </motion.button>
+                  ) : (
+                    <motion.button
+                      key="copy"
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      onClick={handleCopy}
+                      className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
+                      style={{ background: "#fff2d6", color: BRAND }}
+                    >
+                      <Copy size={14} /> คัดลอก
+                    </motion.button>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold mb-2" style={{ color: BRAND }}>
+                แนบหลักฐานการโอน
+              </p>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="relative w-full rounded-2xl border-2 border-dashed overflow-hidden"
+                style={{
+                  borderColor: slip ? "transparent" : "#cbd5d8",
+                  background: slip ? "#000" : "white",
+                  minHeight: 200,
+                }}
+              >
+                {slip ? (
+                  <>
+                    <img src={slip} alt="slip" className="w-full h-56 object-contain" />
+                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
+                      <span className="text-xs font-semibold text-white">เปลี่ยนไฟล์</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-12 flex flex-col items-center gap-2">
+                    <div className="grid h-12 w-12 place-items-center rounded-full" style={{ background: "#fff2d6" }}>
+                      <Upload size={20} color={BRAND} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: BRAND }}>
+                      แตะเพื่ออัปโหลดสลิป
+                    </p>
+                    <p className="text-xs" style={{ color: INK_MUTED }}>
+                      JPG / PNG ไม่เกิน 5MB
+                    </p>
+                  </div>
+                )}
+              </button>
+            </div>
+
+            <div className="pb-8">
+              <div className="mt-4">
+                <button
+                  onClick={onSuccess}
+                  disabled={!slip}
+                  className="w-full h-12 rounded-full font-semibold disabled:opacity-50 active:scale-[0.99] transition-transform"
+                  style={{ background: BRAND, color: "white" }}
+                >
+                  ยืนยันการชำระเงินเรียบร้อย
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Stripe Content */}
+            <div className="bg-white rounded-3xl p-5 shadow-soft border border-slate-50 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <span className="text-sm font-bold text-slate-800">สรุปรายการสั่งซื้อ</span>
+                <span className="text-xs text-slate-400 font-medium">({cart.length} รายการ)</span>
+              </div>
+              
+              <div className="space-y-2 text-sm text-slate-600">
+                <div className="flex justify-between">
+                  <span>ค่าอาหาร (Subtotal)</span>
+                  <span>฿{subtotal.toLocaleString()}</span>
+                </div>
+                {deliveryFee > 0 && (
+                  <div className="flex justify-between">
+                    <span>ค่าจัดส่ง (Delivery Fee)</span>
+                    <span>฿{deliveryFee.toLocaleString()}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-3 border-t border-slate-100 font-bold text-slate-800 text-base">
+                  <span>ยอดชำระทั้งหมด</span>
+                  <span style={{ color: BRAND }}>฿{total.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Information Card */}
+            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200/50 flex gap-3 text-xs text-amber-800 leading-relaxed shadow-sm">
+              <span className="text-lg">💡</span>
+              <div>
+                <p className="font-bold mb-0.5">ระบบชำระเงิน Stripe (โอนเงิน/บัตรเครดิต)</p>
+                <p className="text-amber-700">ชำระได้ทั้ง PromptPay QR Code และ บัตรเครดิต ผ่านแพลตฟอร์ม Stripe ที่ปลอดภัยระดับมาตรฐานสากล</p>
+                <p className="mt-1.5 text-[10px] text-amber-600 italic">หมายเหตุ: หากผู้พัฒนายังไม่ได้ใส่กุญแจ Stripe ลับในระบบ ระบบจะทำงานใน sandbox mode อัตโนมัติ เพื่อให้จำลองความสำเร็จได้ทันที</p>
+              </div>
+            </div>
+
+            {/* Stripe Badges */}
+            <div className="flex flex-col items-center justify-center py-4 bg-white rounded-3xl border border-slate-100 shadow-soft gap-3">
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
+                <span>Secured by</span>
+                <span className="text-[#635bff] font-extrabold tracking-tight text-sm">stripe</span>
+              </div>
+              <div className="flex items-center gap-3 opacity-60">
+                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">VISA</span>
+                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">MASTERCARD</span>
+                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">JCB</span>
+                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">PROMPTPAY</span>
+              </div>
+            </div>
+
+            {stripeErrorMsg && (
+              <div className="bg-red-50 rounded-xl p-3 border border-red-200 text-xs text-red-700 text-center">
+                {stripeErrorMsg}
+              </div>
+            )}
+
+            {/* Pay Button */}
+            <div className="pb-8">
+              <button
+                onClick={handleStripeCheckout}
+                disabled={stripeLoading}
+                className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
+                style={{
+                  background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
+                }}
+              >
+                {stripeLoading ? (
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      border: "2px solid rgba(255,255,255,0.2)",
+                      borderTopColor: "white",
+                      animation: "spin 0.8s linear infinite",
+                    }}
+                  />
+                ) : (
+                  <>
+                    <CreditCard size={18} />
+                    <span>ชำระผ่าน Stripe ฿{total.toLocaleString()}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );
@@ -3397,6 +3730,72 @@ function MockQR() {
       <Corner x={size - c * 7} y={0} />
       <Corner x={0} y={size - c * 7} />
     </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Stripe Helpers
+// ─────────────────────────────────────────────────────────────
+function StripeVerifyingFlash() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[60] flex items-center justify-center"
+      style={{ background: BRAND }}
+    >
+      <div className="flex flex-col items-center gap-4">
+        <div
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: "50%",
+            border: "4px solid rgba(255,255,255,0.1)",
+            borderTopColor: GOLD,
+            animation: "spin 0.8s linear infinite",
+          }}
+        />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <p className="text-white font-bold text-lg">
+          กำลังตรวจสอบการชำระเงินผ่าน Stripe...
+        </p>
+        <p className="text-white/60 text-sm">
+          กรุณาอย่าปิดหน้านี้
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function StripeErrorOverlay({ error, onClose }: { error: string; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[60] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 20 }}
+        className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border border-red-100"
+      >
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500 mb-4">
+          <X size={32} />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">การชำระเงินไม่สำเร็จ</h3>
+        <p className="text-sm text-slate-500 mb-6 leading-relaxed">{error}</p>
+        <button
+          onClick={onClose}
+          className="w-full h-12 rounded-full font-semibold text-white transition-all shadow-md active:scale-[0.98]"
+          style={{ background: BRAND }}
+        >
+          ตกลง
+        </button>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -3884,26 +4283,55 @@ function MiniOrderTracker({
   orderNumber,
   onGoToStatus,
   orderType,
+  status,
 }: {
   orderNumber: string;
   onGoToStatus: () => void;
   orderType: OrderType;
+  status?: string;
 }) {
+  const { t } = useLanguage();
+
+  const isCompleted = status === "สำเร็จ" || status === "completed" || status === "เสร็จสิ้น";
+  const isCooking   = status === "กำลังทำ" || status === "กำลังเตรียม" || status === "preparing";
+  const isReady     = status === "พร้อมเสิร์ฟ" || status === "delivering" || status === "พร้อมรับอาหาร" || status === "กำลังจัดส่ง";
+  const isReceived  = !isCooking && !isReady && !isCompleted;
+
   const steps = orderType === "dine-in"
     ? [
-      { id: 1, label: "รับออเดอร์", icon: Check, done: true },
-      { id: 2, label: "กำลังทำอาหาร", icon: ChefHat, done: false, active: true },
-      { id: 3, label: "เสร็จสิ้น", icon: PartyPopper, done: false },
+      { id: 1, label: t("รับออเดอร์"),      icon: Check,        done: isCooking || isReady || isCompleted, active: isReceived },
+      { id: 2, label: t("กำลังทำอาหาร"),    icon: ChefHat,      done: isReady || isCompleted,              active: isCooking },
+      { id: 3, label: t("เสร็จสิ้น"),       icon: PartyPopper,  done: false,                               active: isCompleted },
     ]
-    : [
-      { id: 1, label: "รับออเดอร์", icon: Check, done: true },
-      { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat, done: true },
-      { id: 3, label: "คนรับอาหาร/กำลังขับไป", icon: Bike, done: false, active: true },
-      { id: 4, label: "เสร็จสิ้น", icon: PartyPopper, done: false },
-    ];
+    : orderType === "takeaway"
+      ? [
+        { id: 1, label: t("รับออเดอร์"),       icon: Check,       done: isCooking || isReady || isCompleted, active: isReceived },
+        { id: 2, label: t("กำลังเตรียมอาหาร"), icon: ChefHat,     done: isReady || isCompleted,              active: isCooking },
+        { id: 3, label: t("พร้อมรับอาหาร"),    icon: ShoppingBag, done: false,                               active: isReady || isCompleted },
+      ]
+      : [
+        { id: 1, label: t("รับออเดอร์"),               icon: Check,        done: isCooking || isReady || isCompleted, active: isReceived },
+        { id: 2, label: t("กำลังเตรียมอาหาร"),         icon: ChefHat,      done: isReady || isCompleted,              active: isCooking },
+        { id: 3, label: t("คนรับอาหาร/กำลังขับไป"),   icon: Bike,         done: isCompleted,                         active: isReady },
+        { id: 4, label: t("เสร็จสิ้น"),                icon: PartyPopper,  done: false,                               active: isCompleted },
+      ];
 
-  const doneCount = steps.filter((s) => s.done).length;
-  const progressPercent = ((doneCount + 0.5) / steps.length) * 100; // halfway through active step
+  const activeIndex = steps.findIndex((s) => s.active);
+  const doneCount   = steps.filter((s) => s.done).length;
+
+  // Progress bar: jump to 100% on completion, otherwise sit halfway through the active step
+  const progressPercent = isCompleted
+    ? 100
+    : activeIndex !== -1
+      ? ((activeIndex + 0.5) / steps.length) * 100
+      : ((doneCount + 0.5) / steps.length) * 100;
+
+  // Yellow connecting line fraction (0–1)
+  const lineFraction = isCompleted
+    ? 1
+    : activeIndex > 0
+      ? activeIndex / (steps.length - 1)
+      : 0;
 
   return (
     <div
@@ -3929,13 +4357,16 @@ function MiniOrderTracker({
           </div>
         </div>
         <motion.span
-          animate={{ scale: [1, 1.03, 1] }}
-          transition={{ duration: 2, repeat: Infinity }}
+          animate={!isCompleted ? { scale: [1, 1.03, 1] } : undefined}
+          transition={!isCompleted ? { duration: 2, repeat: Infinity } : undefined}
           className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
-          style={{ background: "rgba(59,130,246,0.08)", color: "#2563eb" }}
+          style={{
+            background: isCompleted ? "rgba(16,185,129,0.08)" : "rgba(59,130,246,0.08)",
+            color:      isCompleted ? "#10b981"               : "#2563eb",
+          }}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-          กำลังดำเนินการ
+          <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${isCompleted ? "bg-emerald-500" : "bg-blue-500"}`} />
+          {isCompleted ? t("เสร็จสิ้น") : t("กำลังดำเนินการ")}
         </motion.span>
       </div>
 
@@ -3957,13 +4388,13 @@ function MiniOrderTracker({
           className="absolute top-4 h-[2px] -translate-y-1/2"
           style={{ background: "#eef2f6", left: 16, right: 16 }}
         />
-        {/* Yellow active connecting line */}
+        {/* Yellow active connecting line — stretches to each step as status advances */}
         <div
-          className="absolute top-4 h-[2px] -translate-y-1/2 transition-all duration-500"
+          className="absolute top-4 h-[2px] -translate-y-1/2 transition-all duration-700"
           style={{
             background: "#ffcb44",
             left: 16,
-            width: `calc((${Math.max(0, (doneCount - 1) / (steps.length - 1))} * (100% - 32px)))`,
+            width: `calc(${lineFraction} * (100% - 32px))`,
           }}
         />
         {steps.map((s, i) => {

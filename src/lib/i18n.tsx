@@ -107,6 +107,8 @@ const uiDictionary: Record<string, Record<Language, string>> = {
   "กำลังเตรียม": { th: "กำลังเตรียม", en: "Preparing", zh: "正在配餐" },
   "กำลังจัดส่ง": { th: "กำลังจัดส่ง", en: "Out for Delivery", zh: "配送中" },
   "สำเร็จ": { th: "สำเร็จ", en: "Completed", zh: "已完成" },
+  "เสร็จสิ้น": { th: "เสร็จสิ้น", en: "Completed", zh: "已完成" },
+  "กำลังดำเนินการ": { th: "กำลังดำเนินการ", en: "In Progress", zh: "进行中" },
   "ยกเลิกแล้ว": { th: "ยกเลิกแล้ว", en: "Cancelled", zh: "已取消" },
   "ขอคืนเงิน": { th: "ขอคืนเงิน", en: "Refund Requested", zh: "申请退款" },
   "รอรับออเดอร์": { th: "รอรับออเดอร์", en: "Awaiting Confirmation", zh: "等待接单" },
@@ -393,64 +395,62 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return entry[language];
     }
 
-    // Try dynamic translation cache
+    // Try dynamic translation cache (UI keys use format "<lang>:<key>")
     const cacheKey = `${language}:${key}`;
     if (localCache[cacheKey]) {
       return localCache[cacheKey];
     }
 
     // Attempt dynamic translation in background
-    triggerAsyncTranslation(key);
+    triggerAsyncTranslation(key, "ui");
 
     return key;
   };
 
   // Translation helper for Menus (returns name or description)
+  // Uses field-qualified cache keys: "<lang>:name:<text>" and "<lang>:desc:<text>"
+  // so that name and description for new items never collide in the cache.
   const tMenu = (text: string, field: "name" | "desc" = "name"): string => {
     if (language === "th") return text;
-    
-    // Check if the exact menu item exists in menuDictionary
-    let cleanKey = text;
-    let foundEntry = menuDictionary[cleanKey];
 
-    // If we're looking for description, we find by the menu name key
+    // 1. Look up by exact Thai name key in the static dictionary
+    let foundEntry = menuDictionary[text];
+
+    // 2. For "desc" lookups, find the entry whose Thai desc matches
     if (!foundEntry && field === "desc") {
-      // Find the menu name that has this description in Thai
       const matchedName = Object.keys(menuDictionary).find(
         (k) => menuDictionary[k].th.desc === text
       );
-      if (matchedName) {
-        cleanKey = matchedName;
-        foundEntry = menuDictionary[cleanKey];
-      }
+      if (matchedName) foundEntry = menuDictionary[matchedName];
     }
 
     if (foundEntry && foundEntry[language]) {
       return foundEntry[language][field];
     }
 
-    // If not found in static dictionary, treat it as general UI text (which does dynamic translate)
-    const cacheKey = `${language}:${text}`;
+    // 3. Not in static dictionary — use field-qualified dynamic cache
+    const cacheKey = `${language}:${field}:${text}`;
     if (localCache[cacheKey]) {
       return localCache[cacheKey];
     }
 
-    triggerAsyncTranslation(text);
+    // 4. Fire async translation (returns original text until done, then re-renders)
+    triggerAsyncTranslation(text, field);
 
     return text;
   };
 
-  // Triggers API translation in background and caches results
-  const triggerAsyncTranslation = async (text: string) => {
+  // Triggers API translation in background and stores result in state (causing re-render)
+  const triggerAsyncTranslation = async (text: string, field: "name" | "desc" | "ui" = "ui") => {
     if (!text.trim() || language === "th") return;
-    const cacheKey = `${language}:${text}`;
-    
+    const cacheKey = field === "ui" ? `${language}:${text}` : `${language}:${field}:${text}`;
+
     if (localCache[cacheKey] || loadingLanguages[cacheKey]) return;
 
     setLoadingLanguages((prev) => ({ ...prev, [cacheKey]: true }));
 
     try {
-      console.log(`[i18n] Translating dynamically to ${language}:`, text);
+      console.log(`[i18n] Translating (${field}) to ${language}:`, text);
       const res = await translateApi({
         data: {
           text,
@@ -460,7 +460,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
 
       if (res && res.translatedText) {
-        const updatedCache = { ...localCache, [cacheKey]: res.translatedText };
+        const updatedCache = { ...dynamicCache, ...localCache, [cacheKey]: res.translatedText };
+        dynamicCache = updatedCache;
         setLocalCache(updatedCache);
         if (typeof window !== "undefined") {
           localStorage.setItem(dynamicCacheKey, JSON.stringify(updatedCache));
