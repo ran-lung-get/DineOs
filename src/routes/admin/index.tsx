@@ -8,7 +8,7 @@ import {
   addIngredient, 
   deleteIngredient 
 } from "../../lib/supabase.service";
-import { MENU } from "../customer/index";
+import { MENU, type MenuItem } from "../customer/index";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -84,6 +84,8 @@ function AdminDashboard() {
   // Inventory state
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [loadingIngredients, setLoadingIngredients] = useState(false);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [loadingMenuItems, setLoadingMenuItems] = useState(false);
   const [activeSubView, setActiveSubView] = useState<"menu" | "ingredients">("menu");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -209,6 +211,39 @@ function AdminDashboard() {
     }
   };
 
+  const fetchMenuItems = async () => {
+    setLoadingMenuItems(true);
+    try {
+      const { data, error } = await supabase
+        .from("menu_items")
+        .select("*")
+        .order("sort_order", { ascending: true });
+
+      if (!error && data) {
+        const mapped = data.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          desc: item.description || "",
+          price: Number(item.price),
+          image: item.image || "",
+          category: item.category || "signature",
+          isAvailable: item.is_available ?? true,
+          isSpicy: item.is_spicy ?? false,
+          options: item.options || undefined,
+          addons: item.addons || undefined,
+        }));
+        setMenuItems(mapped);
+      } else {
+        setMenuItems([]);
+      }
+    } catch (err) {
+      console.error("Load menu items error:", err);
+      setMenuItems([]);
+    } finally {
+      setLoadingMenuItems(false);
+    }
+  };
+
   // 4. Fetch Users (for Staff role controller)
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -243,6 +278,7 @@ function AdminDashboard() {
       fetchSupabaseOrders();
     } else if (view === "inventory") {
       fetchIngredients();
+      fetchMenuItems();
       const savedOutOfStock = localStorage.getItem("ran-lung-get-out-of-stock-items");
       if (savedOutOfStock) {
         try {
@@ -557,6 +593,8 @@ function AdminDashboard() {
               editUnit={editUnit}
               setEditUnit={setEditUnit}
               editThreshold={editThreshold}
+              menuItems={menuItems}
+              loadingMenuItems={loadingMenuItems}
               setEditThreshold={setEditThreshold}
               saveIngredientEdit={saveIngredientEdit}
               handleRemoveIngredient={handleRemoveIngredient}
@@ -1051,6 +1089,8 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
 function AdminInventoryView({
   ingredients,
   loading,
+  menuItems,
+  loadingMenuItems,
   activeSubView,
   setActiveSubView,
   searchQuery,
@@ -1137,13 +1177,14 @@ function AdminInventoryView({
   ];
 
   const filteredMenuItems = useMemo(() => {
-    return MENU.filter(item => {
+    const sourceMenuItems = menuItems.length > 0 ? menuItems : MENU;
+    return sourceMenuItems.filter((item: MenuItem) => {
       const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.desc.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [menuItems, searchQuery, selectedCategory]);
 
   const renderRow = (item: any) => {
     const isLowStock = Number(item.quantity) <= Number(item.min_threshold);
@@ -1434,7 +1475,7 @@ function AdminInventoryView({
       ) : (
         /* Menu Items */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredMenuItems.map((item) => {
+          {filteredMenuItems.map((item: MenuItem) => {
             const isOutOfStock = outOfStockIds.includes(item.id);
             return (
               <div 
