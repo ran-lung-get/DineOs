@@ -1852,7 +1852,7 @@ function HomeScreen({
               )}
             </div>
             <button
-              aria-label="ดำเนินการสั่งอาหารตามที่เลือก"
+              aria-label="สั่งอาหาร"
               onClick={() => {
                 if (!orderType) {
                   setShowTypeError(true);
@@ -2241,6 +2241,7 @@ function TablePickerBottomSheet({
                   return (
                     <motion.button
                       key={table.id}
+                      aria-label={`เลือก ${table.label}`}
                       disabled={isWalkIn || (!available && !isSelected)}
                       onClick={() => !isWalkIn && available && onSelect(table.id)}
                       className="rounded-2xl p-4 text-left relative overflow-hidden"
@@ -5066,9 +5067,6 @@ function Sidebar({
           >
             <LogOut size={16} /> ออกจากระบบ
           </button>
-          <p className="mt-2 text-center text-[10px] text-white/40">
-            © 2026 ร้านลุงเก้ต
-          </p>
         </div>
 
       </motion.aside>

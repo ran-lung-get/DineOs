@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { syncAuthUserToSupabase } from "../lib/supabase.service";
-import { ShoppingBag, User, ChefHat, Headset } from "lucide-react";
+import { ShoppingBag, User, ChefHat, Headset, ShieldAlert } from "lucide-react";
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
@@ -31,14 +31,15 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [nickname, setNickname] = useState("");
   const [phone, setPhone] = useState("");
-  const [role, setRole] = useState<"customer" | "staff" | "admin">("customer");
+  const [gender, setGender] = useState<"male" | "female" | "">("");
+  const [role, setRole] = useState<"customer" | "staff" | "admin" | "captain">("customer");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [session, setSession] = useState<any>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  const [hoveredRole, setHoveredRole] = useState<"customer" | "staff" | "admin" | null>(null);
+  const [hoveredRole, setHoveredRole] = useState<"customer" | "staff" | "admin" | "captain" | null>(null);
   const [hoveredGuest, setHoveredGuest] = useState(false);
 
   // ── check if already logged in ────────────────────────────────
@@ -104,6 +105,10 @@ function LoginPage() {
       setFormError("กรุณากรอกเบอร์โทร");
       return;
     }
+    if (tab === "register" && !gender) {
+      setFormError("กรุณาเลือกเพศ");
+      return;
+    }
     setLoading(true);
     try {
       if (tab === "login") {
@@ -123,6 +128,7 @@ function LoginPage() {
               full_name: nickname.trim(),
               display_name: nickname.trim(),
               phone: phone.trim(),
+              gender,
               role,
             },
           },
@@ -131,30 +137,49 @@ function LoginPage() {
           setFormError(translateAuthError(error.message));
           setLoading(false);
         } else if (data.user) {
-          // Sync to public.users with the chosen role
+          // Sync to public.users and public.customers
           try {
             const client = supabase as any;
             const now = new Date().toISOString();
-            await client.from("users").upsert(
-              {
-                auth_user_id: data.user.id,
-                display_name: nickname.trim(),
-                email: data.user.email,
-                role,
-                is_active: true,
-                updated_at: now,
-                last_login_at: now,
-              },
-              { onConflict: "auth_user_id", ignoreDuplicates: false },
-            );
+            const { data: dbUser, error: userError } = await client
+              .from("users")
+              .upsert(
+                {
+                  auth_user_id: data.user.id,
+                  display_name: nickname.trim(),
+                  email: data.user.email,
+                  role,
+                  is_active: (role === "admin" || role === "captain" || role === "staff") ? false : true,
+                  updated_at: now,
+                  last_login_at: now,
+                },
+                { onConflict: "auth_user_id", ignoreDuplicates: false },
+              )
+              .select()
+              .single();
+
+            if (dbUser && !userError) {
+              await client.from("customers").upsert(
+                {
+                  user_id: dbUser.id,
+                  auth_user_id: data.user.id,
+                  display_name: nickname.trim(),
+                  phone: phone.trim(),
+                  email: data.user.email,
+                  notes: gender ? `เพศ: ${gender}` : null,
+                  updated_at: now,
+                },
+                { onConflict: "auth_user_id", ignoreDuplicates: false }
+              );
+            }
           } catch (syncErr) {
-            console.error("[Register] sync to users error:", syncErr);
+            console.error("[Register] sync to users/customers error:", syncErr);
           }
 
           if (data.session) {
             setFormSuccess(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉`);
           } else {
-            setFormSuccess(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉 กรุณาเข้าสู่ระบบ`);
+            setFormSuccess(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉 กรุณาตรวจสอบอีเมลเพื่อยืนยันการสมัคร หรือเข้าสู่ระบบ`);
             setTab("login");
           }
           setLoading(false);
@@ -444,6 +469,41 @@ function LoginPage() {
                       </div>
                     </div>
 
+                    {/* Gender */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold" style={{ color: INK_MUTED }}>เพศ</label>
+                      <div className="flex gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setGender("male")}
+                          className={`flex-1 py-4 flex justify-center items-center rounded-2xl transition-all border-2 ${
+                            gender === "male"
+                              ? "border-[#002e47] bg-[#002e47] text-white shadow-md"
+                              : "border-transparent bg-white text-[#5a6e7a] hover:bg-slate-50"
+                          }`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" fill="currentColor">
+                            <circle cx="12" cy="5" r="2" />
+                            <path d="M14 8H10c-1.1 0-2 .9-2 2v6h2v6h4v-6h2v-6c0-1.1-.9-2-2-2z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setGender("female")}
+                          className={`flex-1 py-4 flex justify-center items-center rounded-2xl transition-all border-2 ${
+                            gender === "female"
+                              ? "border-[#002e47] bg-[#002e47] text-white shadow-md"
+                              : "border-transparent bg-white text-[#5a6e7a] hover:bg-slate-50"
+                          }`}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="36" height="36" fill="currentColor">
+                            <circle cx="12" cy="5" r="2" />
+                            <path d="M15 8H9l-3 9h3v5h6v-5h3l-3-9z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
                     {/* Role selector */}
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-semibold" style={{ color: INK_MUTED }}>
@@ -452,14 +512,15 @@ function LoginPage() {
                       <div className="grid grid-cols-2 gap-2.5">
                         {(
                           [
-                            { value: "customer", label: "ลูกค้า", desc: "สั่งอาหาร", Icon: User },
+                            { value: "captain", label: "กัปตัน", desc: "สูงสุด", Icon: ShieldAlert },
+                            { value: "admin", label: "แอดมิน", desc: "จัดการระบบ", Icon: Headset },
                             {
                               value: "staff",
                               label: "พนักงาน",
                               desc: "จัดการออเดอร์",
                               Icon: ChefHat,
                             },
-                            { value: "admin", label: "แอดมิน", desc: "จัดการระบบ", Icon: Headset },
+                            { value: "customer", label: "ลูกค้า", desc: "สั่งอาหาร", Icon: User },
                           ] as const
                         ).map((r) => (
                           <button
