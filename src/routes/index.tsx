@@ -83,7 +83,9 @@ function RootRedirector() {
         if (cancelled) return;
 
         // 5. เปลี่ยนเส้นทางไปยังหน้า Dashboard ของแต่ละ Role
-        if (role === "admin") {
+        if (role === "captain") {
+          navigate({ to: "/captain" });
+        } else if (role === "admin") {
           navigate({ to: "/admin" });
         } else if (role === "staff") {
           navigate({ to: "/staff" });

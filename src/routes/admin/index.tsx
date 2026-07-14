@@ -40,7 +40,8 @@ import {
   ShieldCheck,
   UserX,
   UserCheck,
-  Flame
+  Flame,
+  Search
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin/")({
@@ -1515,14 +1516,36 @@ function AdminStaffView({
   toggleUserActiveStatus: (id: string, current: boolean) => void;
   deleteUser: (id: string, name: string) => void;
 }) {
+  const [search, setSearch] = useState("");
 
   if (loading) {
     return <div className="text-center py-20 font-bold text-gray-500">กำลังดาวน์โหลดรายชื่อผู้ใช้งาน...</div>;
   }
 
+  const filteredUsers = users.filter((u) => {
+    const q = search.toLowerCase();
+    return (
+      (u.display_name && u.display_name.toLowerCase().includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q)) ||
+      (u.role && u.role.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="bg-white border border-[#ece4d6] rounded-3xl p-5 shadow-sm space-y-4">
-      <h2 className="text-sm font-black text-[#002e47] mb-3">👥 รายชื่อผู้ใช้ระบบและสิทธิ์การเข้าถึง</h2>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
+        <h2 className="text-sm font-black text-[#002e47]">👥 รายชื่อผู้ใช้ระบบและสิทธิ์การเข้าถึง</h2>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="ค้นหาชื่อ, อีเมล, สิทธิ์..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition-all w-full sm:w-64"
+          />
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-xs sm:text-sm">
           <thead>
@@ -1534,10 +1557,10 @@ function AdminStaffView({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-            {users.length === 0 ? (
+            {filteredUsers.length === 0 ? (
               <tr><td colSpan={4} className="py-8 text-center text-slate-400 italic">ไม่พบข้อมูลรายชื่อในระบบ</td></tr>
             ) : (
-              users.map((user) => {
+              filteredUsers.map((user) => {
                 const isActive = user.is_active !== false;
                 return (
                   <tr key={user.id} className="hover:bg-slate-50/50">
@@ -1567,21 +1590,35 @@ function AdminStaffView({
                       </span>
                     </td>
                     <td className="py-3 px-4">
-                      <button
-                        onClick={() => toggleUserActiveStatus(user.id, isActive)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-xl text-[10px] font-bold border transition cursor-pointer active:scale-95 ${
-                          isActive 
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
-                            : "bg-red-50 text-red-700 border-red-200"
-                        }`}
-                      >
-                        {isActive ? <UserCheck size={11} /> : <UserX size={11} />}
-                        {isActive ? "ใช้งานได้" : "ระงับชั่วคราว"}
-                      </button>
+                      {user.role === "captain" ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-xl text-[10px] font-bold border bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed">
+                          <UserCheck size={11} /> ใช้งานได้ (Locked)
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => toggleUserActiveStatus(user.id, isActive)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-xl text-[10px] font-bold border transition cursor-pointer active:scale-95 ${
+                            isActive 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-red-50 text-red-700 border-red-200"
+                          }`}
+                        >
+                          {isActive ? <UserCheck size={11} /> : <UserX size={11} />}
+                          {isActive ? "ใช้งานได้" : "ระงับชั่วคราว"}
+                        </button>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right space-x-1.5">
-                      {user.role !== "admin" ? (
+                      {user.role !== "captain" ? (
                         <div className="inline-flex gap-1.5 justify-end items-center">
+                          <button
+                            onClick={() => updateUserRole(user.id, "admin")}
+                            className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
+                              user.role === "admin" ? "bg-purple-600 text-white border-purple-600" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                            }`}
+                          >
+                            Admin
+                          </button>
                           <button
                             onClick={() => updateUserRole(user.id, "staff")}
                             className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
@@ -1608,7 +1645,9 @@ function AdminStaffView({
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[10px] font-bold text-purple-700 italic">เจ้าของระบบ</span>
+                        <span className="text-[10px] font-bold italic text-rose-700">
+                          เจ้าของระบบสูงสุด
+                        </span>
                       )}
                     </td>
                   </tr>

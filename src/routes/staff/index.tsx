@@ -42,6 +42,7 @@ import {
   ChevronUp,
   Grip,
   BookOpen,
+  LogOut,
 } from "lucide-react";
 
 export const Route = createFileRoute("/staff/")({
@@ -239,10 +240,17 @@ function KitchenSidebarContent({
       </div>
 
       {/* Footer Info */}
-      <div className="p-4 border-t border-white/10 bg-white/2 shrink-0">
-        <p className="text-[9px] text-white/40 text-center font-semibold">
-          ระบบจัดการร้านค้า v1.3.0 · ครัวลุงเกตุ
-        </p>
+      <div className="p-4 shrink-0">
+        <button
+          onClick={async () => {
+            document.body.style.display = 'none';
+            await supabase.auth.signOut();
+            window.location.href = "/login";
+          }}
+          className="w-full flex items-center justify-center gap-2 p-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold rounded-xl transition duration-300 cursor-pointer border border-red-500/20"
+        >
+          <LogOut size={16} /> ออกจากระบบ
+        </button>
       </div>
     </div>
   );
@@ -371,6 +379,14 @@ function KitchenMonitor() {
       return next;
     });
     if (soundEnabled) playNotificationSound();
+  };
+
+  const clearMockOrders = () => {
+    setOrders(prev => {
+      const next = prev.filter(o => !o.id.startsWith("mock_"));
+      localStorage.setItem("ran-lung-get-orders", JSON.stringify(next));
+      return next;
+    });
   };
 
   const advanceOrderStatus = async (id: string) => {
@@ -539,14 +555,23 @@ function KitchenMonitor() {
                 {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
               </button>
               {view === "kitchen" && (
-                <button
-                  onClick={triggerMockOrder}
-                  className="flex items-center gap-1.5 hover:opacity-90 active:scale-95 text-[#002e47] px-3.5 py-2.5 rounded-xl font-bold text-xs tracking-wider transition shadow-sm cursor-pointer border border-[#002e47]/10"
-                  style={{ background: GOLD }}
-                >
-                  <PlusCircle size={13} />
-                  <span>จำลองออเดอร์</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={clearMockOrders}
+                    className="flex items-center gap-1.5 hover:bg-red-100 active:scale-95 text-red-600 bg-red-50 px-3.5 py-2.5 rounded-xl font-bold text-xs tracking-wider transition shadow-sm cursor-pointer border border-red-200"
+                  >
+                    <Trash2 size={13} />
+                    <span>ยกเลิกจำลองออเดอร์</span>
+                  </button>
+                  <button
+                    onClick={triggerMockOrder}
+                    className="flex items-center gap-1.5 hover:opacity-90 active:scale-95 text-[#002e47] px-3.5 py-2.5 rounded-xl font-bold text-xs tracking-wider transition shadow-sm cursor-pointer border border-[#002e47]/10"
+                    style={{ background: GOLD }}
+                  >
+                    <PlusCircle size={13} />
+                    <span>จำลองออเดอร์</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
