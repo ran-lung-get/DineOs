@@ -41,7 +41,8 @@ import {
   UserX,
   UserCheck,
   Flame,
-  Search
+  Search,
+  UserPlus
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin/")({
@@ -70,7 +71,7 @@ const getTimestampFromOrderId = (id: string) => {
 
 function AdminDashboard() {
   const navigate = useNavigate();
-  const [view, setView] = useState<"dashboard" | "inventory" | "staff">("dashboard");
+  const [view, setView] = useState<"dashboard" | "inventory" | "staff" | "approvals">("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [soundEnabled] = useState(true);
 
@@ -129,6 +130,13 @@ function AdminDashboard() {
           // If not admin, send to customer page (or warn them)
           console.warn("Unauthorized access: admin role required");
           window.location.href = "/customer";
+          return;
+        }
+
+        if (data.is_active === false) {
+          alert("บัญชีแอดมินของคุณอยู่ระหว่างรอการอนุมัติสิทธิ์ (Pending Approval)");
+          await supabase.auth.signOut();
+          window.location.href = "/login";
           return;
         }
 
@@ -268,10 +276,30 @@ function AdminDashboard() {
           setOutOfStockIds(JSON.parse(savedOutOfStock));
         } catch {}
       }
-    } else if (view === "staff") {
+    } else if (view === "staff" || view === "approvals") {
       fetchUsers();
     }
   }, [view, checkingAuth]);
+
+  // Realtime subscription for users table
+  useEffect(() => {
+    fetchUsers(); // Fetch initially so badge is accurate on load regardless of view
+    
+    const channel = supabase
+      .channel('admin-users-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
+        () => {
+          fetchUsers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Handle Logout
   const handleLogout = async () => {
@@ -494,7 +522,7 @@ function AdminDashboard() {
               transition={{ type: "tween", duration: 0.2 }}
               className="fixed top-0 left-0 bottom-0 w-64 bg-[#002e47] text-white z-50 flex flex-col p-5 shadow-2xl"
             >
-              <AdminSidebarContent view={view} setView={setView} setSidebarOpen={setSidebarOpen} handleLogout={handleLogout} />
+              <AdminSidebarContent view={view} setView={setView} setSidebarOpen={setSidebarOpen} handleLogout={handleLogout} pendingCount={users.filter(u => u.is_active === false).length} />
             </motion.aside>
           </>
         )}
@@ -502,7 +530,7 @@ function AdminDashboard() {
 
       {/* ── Desktop Left Sidebar ── */}
       <aside className="hidden md:flex flex-col w-72 h-screen shrink-0 bg-[#002e47] text-white border-r border-[#ece4d6] shadow-md z-20">
-        <AdminSidebarContent view={view} setView={setView} handleLogout={handleLogout} />
+        <AdminSidebarContent view={view} setView={setView} handleLogout={handleLogout} pendingCount={users.filter(u => u.is_active === false).length} />
       </aside>
 
       {/* ── Main content view area ── */}
@@ -523,10 +551,10 @@ function AdminDashboard() {
               </div>
               <div>
                 <h1 className="text-lg font-black text-[#002e47] tracking-tight">
-                  {view === "dashboard" ? "รายงานยอดขาย & ประวัติ" : view === "inventory" ? "จัดการคลังสต็อก & เมนู" : "จัดการระดับพนักงาน"}
+                  {view === "dashboard" ? "รายงานยอดขาย & ประวัติ" : view === "inventory" ? "จัดการคลังสต็อก & เมนู" : view === "approvals" ? "คำขออนุมัติสิทธิ์" : "จัดการระดับพนักงาน"}
                 </h1>
                 <p className="text-xs text-slate-500 font-semibold">
-                  {view === "dashboard" ? "วิเคราะห์ยอดขายสะสม ยอดสั่งซื้อ และรายรับทั้งหมดของร้าน" : view === "inventory" ? "เปิดปิดเมนูอาหาร ปรับปรุงจำนวนสต็อกวัตถุดิบหน้าร้าน" : "จัดการและเปลี่ยนบทบาทสิทธิ์ (Admin / Staff / Customer) ในระบบ"}
+                  {view === "dashboard" ? "วิเคราะห์ยอดขายสะสม ยอดสั่งซื้อ และรายรับทั้งหมดของร้าน" : view === "inventory" ? "เปิดปิดเมนูอาหาร ปรับปรุงจำนวนสต็อกวัตถุดิบหน้าร้าน" : view === "approvals" ? "อนุมัติหรือปฏิเสธคำขอสิทธิ์การใช้งานจากพนักงาน" : "จัดการและเปลี่ยนบทบาทสิทธิ์ (Admin / Staff / Customer) ในระบบ"}
                 </p>
               </div>
             </div>
@@ -585,13 +613,14 @@ function AdminDashboard() {
               setIngredients={setIngredients}
             />
           )}
-          {view === "staff" && (
+          {(view === "staff" || view === "approvals") && (
             <AdminStaffView 
               users={users} 
               loading={loadingUsers} 
               updateUserRole={updateUserRole}
               toggleUserActiveStatus={toggleUserActiveStatus}
               deleteUser={deleteUser}
+              isApprovalsTab={view === "approvals"}
             />
           )}
         </div>
@@ -605,12 +634,14 @@ function AdminSidebarContent({
   view, 
   setView, 
   setSidebarOpen, 
-  handleLogout 
+  handleLogout,
+  pendingCount = 0
 }: { 
   view: string; 
   setView: (v: any) => void; 
   setSidebarOpen?: (b: boolean) => void; 
   handleLogout: () => void;
+  pendingCount?: number;
 }) {
   const selectTab = (v: any) => {
     setView(v);
@@ -670,6 +701,25 @@ function AdminSidebarContent({
         >
           <Users size={18} className={view === "staff" ? "text-[#fcc14a]" : "text-white/60"} />
           <span className="text-sm">จัดการสิทธิ์พนักงาน</span>
+        </button>
+
+        <button
+          onClick={() => selectTab("approvals")}
+          className={`w-full flex items-center justify-between px-3 py-3.5 rounded-xl text-left transition duration-200 cursor-pointer ${
+            view === "approvals" 
+              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]" 
+              : "text-white/70 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <UserPlus size={18} className={view === "approvals" ? "text-[#fcc14a]" : "text-white/60"} />
+            <span className="text-sm">คำขออนุมัติสิทธิ์</span>
+          </div>
+          {pendingCount > 0 && (
+            <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+              {pendingCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1508,13 +1558,15 @@ function AdminStaffView({
   loading, 
   updateUserRole, 
   toggleUserActiveStatus,
-  deleteUser
+  deleteUser,
+  isApprovalsTab = false
 }: { 
   users: any[]; 
   loading: boolean; 
   updateUserRole: (id: string, role: any) => void;
   toggleUserActiveStatus: (id: string, current: boolean) => void;
   deleteUser: (id: string, name: string) => void;
+  isApprovalsTab?: boolean;
 }) {
   const [search, setSearch] = useState("");
 
@@ -1523,6 +1575,9 @@ function AdminStaffView({
   }
 
   const filteredUsers = users.filter((u) => {
+    const isTargetStatus = isApprovalsTab ? u.is_active === false : u.is_active !== false;
+    if (!isTargetStatus) return false;
+    
     const q = search.toLowerCase();
     return (
       (u.display_name && u.display_name.toLowerCase().includes(q)) ||
@@ -1534,7 +1589,9 @@ function AdminStaffView({
   return (
     <div className="bg-white border border-[#ece4d6] rounded-3xl p-5 shadow-sm space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-        <h2 className="text-sm font-black text-[#002e47]">👥 รายชื่อผู้ใช้ระบบและสิทธิ์การเข้าถึง</h2>
+        <h2 className="text-sm font-black text-[#002e47]">
+          {isApprovalsTab ? "⏳ คำขออนุมัติสิทธิ์ (รอตรวจสอบ)" : "👥 รายชื่อผู้ใช้ระบบและสิทธิ์การเข้าถึง"}
+        </h2>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -1604,7 +1661,7 @@ function AdminStaffView({
                           }`}
                         >
                           {isActive ? <UserCheck size={11} /> : <UserX size={11} />}
-                          {isActive ? "ใช้งานได้" : "ระงับชั่วคราว"}
+                          {isActive ? "ใช้งานได้" : isApprovalsTab ? "รออนุมัติ / ระงับชั่วคราว" : "ระงับชั่วคราว"}
                         </button>
                       )}
                     </td>

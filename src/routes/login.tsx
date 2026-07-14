@@ -149,7 +149,7 @@ function LoginPage() {
                   display_name: nickname.trim(),
                   email: data.user.email,
                   role,
-                  is_active: true,
+                  is_active: (role === "admin" || role === "captain" || role === "staff") ? false : true,
                   updated_at: now,
                   last_login_at: now,
                 },

@@ -263,6 +263,39 @@ function KitchenMonitor() {
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          window.location.href = "/login";
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("auth_user_id", session.user.id)
+          .maybeSingle();
+
+        if (error || !data || (data.role !== "staff" && data.role !== "admin" && data.role !== "captain")) {
+          window.location.href = "/customer";
+          return;
+        }
+
+        if (data.is_active === false) {
+          alert("บัญชีของคุณอยู่ระหว่างรอการอนุมัติสิทธิ์ (Pending Approval)");
+          await supabase.auth.signOut();
+          window.location.href = "/login";
+          return;
+        }
+      } catch (err) {
+        window.location.href = "/login";
+      }
+    }
+    checkAuth();
+  }, []);
   const [view, setView] = useState<"kitchen" | "tables" | "menu">("kitchen");
 
   const fetchSupabaseOrders = async () => {

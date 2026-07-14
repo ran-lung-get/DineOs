@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { supabase } from "../../lib/supabase";
 import { 
-  Users, LogOut, ArrowLeft, Trash2, Shield, Search, CheckCircle, ShieldAlert
+  Users, LogOut, ArrowLeft, Trash2, Shield, Search, CheckCircle, ShieldAlert, UserPlus
 } from "lucide-react";
 import type { UserRow } from "../../lib/supabase.types";
 
@@ -25,7 +25,54 @@ function CaptainDashboard() {
   const [activeTab, setActiveTab] = useState("users");
 
   useEffect(() => {
-    fetchUsers();
+    async function checkAuth() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          window.location.href = "/login";
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("auth_user_id", session.user.id)
+          .maybeSingle();
+
+        if (error || !data || data.role !== "captain") {
+          window.location.href = "/customer";
+          return;
+        }
+
+        if (data.is_active === false) {
+          alert("บัญชี Captain ของคุณอยู่ระหว่างรอการอนุมัติสิทธิ์ (Pending Approval)");
+          await supabase.auth.signOut();
+          window.location.href = "/login";
+          return;
+        }
+
+        fetchUsers();
+      } catch (err) {
+        window.location.href = "/login";
+      }
+    }
+    checkAuth();
+    
+    // Subscribe to realtime updates for users table
+    const channel = supabase
+      .channel('captain-users-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
+        () => {
+          fetchUsers();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function fetchUsers() {
@@ -57,8 +104,26 @@ function CaptainDashboard() {
     }
   }
 
+  const toggleUserActiveStatus = async (userId: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+    // Optimistic Update
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_active: nextStatus } : u));
+    
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ is_active: nextStatus })
+        .eq("id", userId);
+      if (error) throw error;
+    } catch (err: any) {
+      alert("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ: " + err.message);
+      fetchUsers();
+    }
+  }
+
   async function handleChangeRole(authUserId: string, newRole: string) {
-    if (!confirm(`ยืนยันการเปลี่ยน Role เป็น ${newRole}?`)) return;
+    // Optimistic UI update
+    setUsers(prev => prev.map(u => u.auth_user_id === authUserId ? { ...u, role: newRole } : u));
 
     try {
       const { error } = await supabase.rpc("update_user_role_by_captain", { 
@@ -66,10 +131,9 @@ function CaptainDashboard() {
         new_role: newRole 
       });
       if (error) throw error;
-      alert("เปลี่ยน Role สำเร็จ");
-      fetchUsers();
     } catch (err: any) {
       alert("เกิดข้อผิดพลาดในการเปลี่ยน Role: " + err.message);
+      fetchUsers(); // Revert local state on error
     }
   }
 
@@ -116,6 +180,25 @@ function CaptainDashboard() {
             <Users size={18} />
             จัดการผู้ใช้งาน
           </button>
+          
+          <button
+            onClick={() => setActiveTab("approvals")}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition-all ${
+              activeTab === "approvals"
+                ? "bg-[#002e47] text-white shadow-md shadow-blue-900/10"
+                : "text-[#5a6e7a] hover:bg-slate-50 hover:text-[#002e47]"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <UserPlus size={18} />
+              คำขออนุมัติสิทธิ์
+            </div>
+            {users.filter(u => u.is_active === false).length > 0 && (
+              <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full">
+                {users.filter(u => u.is_active === false).length}
+              </span>
+            )}
+          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-100">
@@ -151,25 +234,25 @@ function CaptainDashboard() {
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-8">
           <div className="max-w-5xl mx-auto">
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-4">ผู้ใช้งาน</th>
-                    <th className="px-6 py-4">อีเมล</th>
-                    <th className="px-6 py-4">Role</th>
-                    <th className="px-6 py-4">สถานะ</th>
-                    <th className="px-6 py-4 text-right">จัดการ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {loading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-slate-50 text-slate-500 font-medium">
+                <tr>
+                  <th className="px-6 py-4">ผู้ใช้งาน</th>
+                  <th className="px-6 py-4">อีเมล</th>
+                  <th className="px-6 py-4">Role</th>
+                  <th className="px-6 py-4">สถานะ</th>
+                  <th className="px-6 py-4 text-right">จัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading ? (
                     <tr>
                       <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
                         กำลังโหลดข้อมูล...
                       </td>
                     </tr>
-                  ) : filteredUsers.length === 0 ? (
+                  ) : filteredUsers.filter(u => activeTab === "approvals" ? u.is_active === false : u.is_active !== false).length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
                         ไม่พบผู้ใช้งาน
@@ -203,15 +286,22 @@ function CaptainDashboard() {
                           </select>
                         </td>
                         <td className="px-6 py-4">
-                          {u.is_active ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-xs font-semibold">
-                              <CheckCircle size={14} /> ใช้งาน
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 text-xs font-semibold">
-                              ถูกระงับ
-                            </span>
-                          )}
+                          <button
+                            onClick={() => toggleUserActiveStatus(u.id, u.is_active !== false)}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                              u.is_active !== false
+                                ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                                : "bg-rose-50 text-rose-600 hover:bg-rose-100"
+                            }`}
+                          >
+                            {u.is_active !== false ? (
+                              <>
+                                <CheckCircle size={14} /> ใช้งาน
+                              </>
+                            ) : (
+                              "รออนุมัติ / ถูกระงับ"
+                            )}
+                          </button>
                         </td>
                         <td className="px-6 py-4 text-right">
                           {u.role !== 'captain' && (

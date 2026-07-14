@@ -140,6 +140,25 @@ function RootComponent() {
           console.log("🔄 Database Changed:", payload);
           // ทันทีที่มีอะไรเปลี่ยน ให้ดึงข้อมูลใหม่ทั้งหมด (ทำให้ UI อัปเดตทันที)
           queryClient.invalidateQueries();
+
+          // Force logout in real-time if the user's role or active status changed
+          if (payload.table === "users" && payload.eventType === "UPDATE") {
+            supabase.auth.getUser().then(({ data: { user } }) => {
+              if (user && payload.new && payload.new.auth_user_id === user.id) {
+                if (payload.new.is_active === false) {
+                  alert("สิทธิ์การใช้งานของคุณถูกระงับ (Account Suspended)");
+                  supabase.auth.signOut().then(() => {
+                    window.location.href = "/login";
+                  });
+                } else if (payload.old && payload.new.role !== payload.old.role) {
+                  alert("บทบาทของคุณถูกเปลี่ยนแปลง กรุณาเข้าสู่ระบบใหม่ (Role Changed)");
+                  supabase.auth.signOut().then(() => {
+                    window.location.href = "/login";
+                  });
+                }
+              }
+            });
+          }
         }
       )
       .subscribe();
