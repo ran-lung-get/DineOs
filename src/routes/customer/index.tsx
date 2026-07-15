@@ -3389,27 +3389,8 @@ function PaymentOverlay({
   onBack: () => void;
   onSuccess: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [slip, setSlip] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<"promptpay" | "stripe">("promptpay");
   const [stripeLoading, setStripeLoading] = useState(false);
   const [stripeErrorMsg, setStripeErrorMsg] = useState<string | null>(null);
-
-  const fileRef = useRef<HTMLInputElement>(null);
-  const PROMPTPAY = "089-123-4567";
-
-  const handleCopy = () => {
-    navigator.clipboard?.writeText(PROMPTPAY).catch(() => { });
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    setSlip(url);
-  };
 
   const handleStripeCheckout = async () => {
     setStripeLoading(true);
@@ -3463,11 +3444,11 @@ function PaymentOverlay({
       className="absolute inset-0 z-50 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-32"
     >
       {/* Header */}
-      <div className="px-5 pt-5 pb-6" style={{ background: BRAND, color: "white" }}>
+      <div className="px-5 pt-5 pb-6 mb-6" style={{ background: BRAND, color: "white" }}>
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
+            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15 cursor-pointer"
           >
             <ChevronLeft size={20} color={GOLD} />
           </button>
@@ -3475,226 +3456,91 @@ function PaymentOverlay({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="px-5 -mt-4">
-        <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1 shadow-soft">
-          <button
-            onClick={() => setPaymentMethod("promptpay")}
-            className="flex-1 py-3 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
-            style={{
-              background: paymentMethod === "promptpay" ? BRAND : "transparent",
-              color: paymentMethod === "promptpay" ? "white" : BRAND,
-            }}
-          >
-            <QrCode size={14} /> โอนเงินพร้อมเพย์
-          </button>
-          <button
-            onClick={() => setPaymentMethod("stripe")}
-            className="flex-1 py-3 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"
-            style={{
-              background: paymentMethod === "stripe" ? BRAND : "transparent",
-              color: paymentMethod === "stripe" ? "white" : BRAND,
-            }}
-          >
-            <CreditCard size={14} /> บัตรเครดิต / Stripe
-          </button>
-        </div>
-      </div>
-
-      <div className="px-5 mt-4 space-y-4">
-        {paymentMethod === "promptpay" ? (
-          <>
-            {/* PromptPay Content */}
-            <div className="bg-white rounded-2xl p-6 shadow-soft flex flex-col items-center">
-              <div className="px-3 py-1 rounded-md text-[10px] font-bold tracking-widest" style={{ background: "#003d6b", color: "white" }}>
-                PROMPTPAY
-              </div>
-              <div className="mt-4 rounded-2xl p-3 bg-white border-2" style={{ borderColor: "#f1ece4" }}>
-                <MockQR />
-              </div>
-              <p className="mt-3 text-xs" style={{ color: INK_MUTED }}>
-                ยอดที่ต้องชำระ
-              </p>
-              <p className="text-3xl font-bold" style={{ color: BRAND }}>
-                ฿{total.toLocaleString()}
-              </p>
+      <div className="px-5 space-y-4">
+        {/* Stripe Content */}
+        <div className="bg-white rounded-3xl p-5 shadow-soft border border-slate-50 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <span className="text-sm font-bold text-slate-800">สรุปรายการสั่งซื้อ</span>
+            <span className="text-xs text-slate-400 font-medium">({cart.length} รายการ)</span>
+          </div>
+          
+          <div className="space-y-2 text-sm text-slate-600">
+            <div className="flex justify-between">
+              <span>ค่าอาหาร (Subtotal)</span>
+              <span>฿{subtotal.toLocaleString()}</span>
             </div>
-
-            <div className="bg-white rounded-2xl p-4 shadow-soft">
-              <p className="text-xs" style={{ color: INK_MUTED }}>
-                หมายเลขพร้อมเพย์
-              </p>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <p className="text-lg font-bold tracking-wide" style={{ color: BRAND }}>
-                  {PROMPTPAY}
-                </p>
-                <AnimatePresence mode="wait">
-                  {copied ? (
-                    <motion.button
-                      key="ok"
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.9, opacity: 0 }}
-                      className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
-                      style={{ background: "#dcfce7", color: "#16a34a" }}
-                    >
-                      <Check size={14} /> คัดลอกแล้ว
-                    </motion.button>
-                  ) : (
-                    <motion.button
-                      key="copy"
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0.9, opacity: 0 }}
-                      onClick={handleCopy}
-                      className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
-                      style={{ background: "#fff2d6", color: BRAND }}
-                    >
-                      <Copy size={14} /> คัดลอก
-                    </motion.button>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-sm font-semibold mb-2" style={{ color: BRAND }}>
-                แนบหลักฐานการโอน
-              </p>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="relative w-full rounded-2xl border-2 border-dashed overflow-hidden"
-                style={{
-                  borderColor: slip ? "transparent" : "#cbd5d8",
-                  background: slip ? "#000" : "white",
-                  minHeight: 200,
-                }}
-              >
-                {slip ? (
-                  <>
-                    <img src={slip} alt="slip" className="w-full h-56 object-contain" />
-                    <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
-                      <span className="text-xs font-semibold text-white">เปลี่ยนไฟล์</span>
-                    </div>
-                  </>
-                ) : (
-                  <div className="py-12 flex flex-col items-center gap-2">
-                    <div className="grid h-12 w-12 place-items-center rounded-full" style={{ background: "#fff2d6" }}>
-                      <Upload size={20} color={BRAND} />
-                    </div>
-                    <p className="text-sm font-medium" style={{ color: BRAND }}>
-                      แตะเพื่ออัปโหลดสลิป
-                    </p>
-                    <p className="text-xs" style={{ color: INK_MUTED }}>
-                      JPG / PNG ไม่เกิน 5MB
-                    </p>
-                  </div>
-                )}
-              </button>
-            </div>
-
-            <div className="pb-8">
-              <div className="mt-4">
-                <button
-                  onClick={onSuccess}
-                  disabled={!slip}
-                  className="w-full h-12 rounded-full font-semibold disabled:opacity-50 active:scale-[0.99] transition-transform"
-                  style={{ background: BRAND, color: "white" }}
-                >
-                  ยืนยันการชำระเงินเรียบร้อย
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Stripe Content */}
-            <div className="bg-white rounded-3xl p-5 shadow-soft border border-slate-50 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <span className="text-sm font-bold text-slate-800">สรุปรายการสั่งซื้อ</span>
-                <span className="text-xs text-slate-400 font-medium">({cart.length} รายการ)</span>
-              </div>
-              
-              <div className="space-y-2 text-sm text-slate-600">
-                <div className="flex justify-between">
-                  <span>ค่าอาหาร (Subtotal)</span>
-                  <span>฿{subtotal.toLocaleString()}</span>
-                </div>
-                {deliveryFee > 0 && (
-                  <div className="flex justify-between">
-                    <span>ค่าจัดส่ง (Delivery Fee)</span>
-                    <span>฿{deliveryFee.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between pt-3 border-t border-slate-100 font-bold text-slate-800 text-base">
-                  <span>ยอดชำระทั้งหมด</span>
-                  <span style={{ color: BRAND }}>฿{total.toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Information Card */}
-            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200/50 flex gap-3 text-xs text-amber-800 leading-relaxed shadow-sm">
-              <span className="text-lg">💡</span>
-              <div>
-                <p className="font-bold mb-0.5">ระบบชำระเงิน Stripe (โอนเงิน/บัตรเครดิต)</p>
-                <p className="text-amber-700">ชำระได้ทั้ง PromptPay QR Code และ บัตรเครดิต ผ่านแพลตฟอร์ม Stripe ที่ปลอดภัยระดับมาตรฐานสากล</p>
-                <p className="mt-1.5 text-[10px] text-amber-600 italic">หมายเหตุ: หากผู้พัฒนายังไม่ได้ใส่กุญแจ Stripe ลับในระบบ ระบบจะทำงานใน sandbox mode อัตโนมัติ เพื่อให้จำลองความสำเร็จได้ทันที</p>
-              </div>
-            </div>
-
-            {/* Stripe Badges */}
-            <div className="flex flex-col items-center justify-center py-4 bg-white rounded-3xl border border-slate-100 shadow-soft gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
-                <span>Secured by</span>
-                <span className="text-[#635bff] font-extrabold tracking-tight text-sm">stripe</span>
-              </div>
-              <div className="flex items-center gap-3 opacity-60">
-                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">VISA</span>
-                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">MASTERCARD</span>
-                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">JCB</span>
-                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">PROMPTPAY</span>
-              </div>
-            </div>
-
-            {stripeErrorMsg && (
-              <div className="bg-red-50 rounded-xl p-3 border border-red-200 text-xs text-red-700 text-center">
-                {stripeErrorMsg}
+            {deliveryFee > 0 && (
+              <div className="flex justify-between">
+                <span>ค่าจัดส่ง (Delivery Fee)</span>
+                <span>฿{deliveryFee.toLocaleString()}</span>
               </div>
             )}
-
-            {/* Pay Button */}
-            <div className="pb-8">
-              <button
-                onClick={handleStripeCheckout}
-                disabled={stripeLoading}
-                className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
-                style={{
-                  background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
-                }}
-              >
-                {stripeLoading ? (
-                  <div
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      border: "2px solid rgba(255,255,255,0.2)",
-                      borderTopColor: "white",
-                      animation: "spin 0.8s linear infinite",
-                    }}
-                  />
-                ) : (
-                  <>
-                    <CreditCard size={18} />
-                    <span>ชำระผ่าน Stripe ฿{total.toLocaleString()}</span>
-                  </>
-                )}
-              </button>
+            <div className="flex justify-between pt-3 border-t border-slate-100 font-bold text-slate-800 text-base">
+              <span>ยอดชำระทั้งหมด</span>
+              <span style={{ color: BRAND }}>฿{total.toLocaleString()}</span>
             </div>
-          </>
+          </div>
+        </div>
+
+        {/* Information Card */}
+        <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200/50 flex gap-3 text-xs text-amber-800 leading-relaxed shadow-sm">
+          <span className="text-lg">💡</span>
+          <div>
+            <p className="font-bold mb-0.5">ระบบชำระเงิน Stripe (โอนเงิน/บัตรเครดิต)</p>
+            <p className="text-amber-700">ชำระได้ทั้ง PromptPay QR Code และ บัตรเครดิต ผ่านแพลตฟอร์ม Stripe ที่ปลอดภัยระดับมาตรฐานสากล</p>
+            <p className="mt-1.5 text-[10px] text-amber-600 italic">หมายเหตุ: หากผู้พัฒนายังไม่ได้ใส่กุญแจ Stripe ลับในระบบ ระบบจะทำงานใน sandbox mode อัตโนมัติ เพื่อให้จำลองความสำเร็จได้ทันที</p>
+          </div>
+        </div>
+
+        {/* Stripe Badges */}
+        <div className="flex flex-col items-center justify-center py-4 bg-white rounded-3xl border border-slate-100 shadow-soft gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
+            <span>Secured by</span>
+            <span className="text-[#635bff] font-extrabold tracking-tight text-sm">stripe</span>
+          </div>
+          <div className="flex items-center gap-3 opacity-60">
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">VISA</span>
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">MASTERCARD</span>
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">JCB</span>
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">PROMPTPAY</span>
+          </div>
+        </div>
+
+        {stripeErrorMsg && (
+          <div className="bg-red-50 rounded-xl p-3 border border-red-200 text-xs text-red-700 text-center">
+            {stripeErrorMsg}
+          </div>
         )}
+
+        {/* Pay Button */}
+        <div className="pb-8">
+          <button
+            onClick={handleStripeCheckout}
+            disabled={stripeLoading}
+            className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
+            style={{
+              background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
+            }}
+          >
+            {stripeLoading ? (
+              <div
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  border: "2px solid rgba(255,255,255,0.2)",
+                  borderTopColor: "white",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+            ) : (
+              <>
+                <CreditCard size={18} />
+                <span>ชำระผ่าน Stripe ฿{total.toLocaleString()}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </motion.div>
   );
@@ -3912,7 +3758,9 @@ function StatusScreen({
     // สำหรับสถานะเตรียมอาหาร หรือจัดส่งสำเร็จ
     return {
       title: currentStatus === "สำเร็จ" ? "รายการสำเร็จ" : "กำลังดำเนินการ",
-      subtitle: orderType === "dine-in" ? "รอเสิร์ฟอาหารในอีก 10 นาที" : "รอรับอาหารในอีก 14 นาที",
+      subtitle: currentStatus === "สำเร็จ"
+        ? ""
+        : (orderType === "dine-in" ? "รอเสิร์ฟอาหารในอีก 10 นาที" : "รอรับอาหารในอีก 14 นาที"),
       color: "#10b981", // Emerald
       bg: "rgba(16, 185, 129, 0.08)",
       iconColor: "#10b981"
@@ -4030,9 +3878,11 @@ function StatusScreen({
         <h2 className="mt-5 text-2xl font-bold" style={{ color: BRAND }}>
           {statusTheme.title}
         </h2>
-        <p className="mt-1 text-sm max-w-xs mx-auto leading-relaxed" style={{ color: INK_MUTED }}>
-          {statusTheme.subtitle}
-        </p>
+        {statusTheme.subtitle && (
+          <p className="mt-1 text-sm max-w-xs mx-auto leading-relaxed" style={{ color: INK_MUTED }}>
+            {statusTheme.subtitle}
+          </p>
+        )}
 
         {activeOrder?.orderType === "takeaway" && activeOrder?.queueNumber && (
           <motion.div
