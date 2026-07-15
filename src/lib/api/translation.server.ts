@@ -71,12 +71,10 @@ export async function translateText({ text, sourceLang, targetLang }: TranslateP
   }
 
   // 3. Fallback to OpenAI API if Google Translate failed or was not configured
+  let openaiSuccess = false;
   if (!googleSuccess) {
     const openaiApiKey = process.env.OPENAI_API_KEY;
-    if (!openaiApiKey) {
-      console.warn("Both Google Translate API Key and OpenAI API Key are missing. Using original text as fallback.");
-      translatedText = text;
-    } else {
+    if (openaiApiKey) {
       try {
         console.log("Calling OpenAI API fallback (gpt-4o-mini)...");
         const systemPrompt = `You are a professional translator. Translate the user's text into ${
@@ -107,32 +105,61 @@ Only output the exact translated text without any explanations, notes, or extra 
           }),
         });
 
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error(`OpenAI API failed: ${errText}`);
-          translatedText = text;
-        } else {
+        if (response.ok) {
           const resJson = await response.json();
           translatedText = resJson?.choices?.[0]?.message?.content?.trim() || text;
+          openaiSuccess = true;
           console.log("OpenAI API success!");
+        } else {
+          const errText = await response.text();
+          console.error(`OpenAI API failed: ${errText}`);
         }
       } catch (e: any) {
         console.error("OpenAI API exception:", e);
+      }
+    }
+  }
+
+  // 4. Fallback to Free Google Translate API if both failed
+  if (!googleSuccess && !openaiSuccess) {
+    try {
+      console.log("Calling Free Google Translate API fallback...");
+      const response = await fetch(
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src || "auto"}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`
+      );
+      if (response.ok) {
+        const resJson = await response.json();
+        const translatedParts = resJson?.[0]?.map((part: any) => part?.[0]).filter(Boolean);
+        if (translatedParts && translatedParts.length > 0) {
+          translatedText = translatedParts.join("");
+          console.log("Free Google Translate API success!");
+        } else {
+          translatedText = text;
+        }
+      } else {
+        console.error("Free Google Translate API failed");
         translatedText = text;
       }
+    } catch (e) {
+      console.error("Free Google Translate API exception:", e);
+      translatedText = text;
     }
   }
 
   // 4. Save to cache in Supabase
   if (translatedText) {
     try {
-      await supabase.from("translation_cache").insert({
+      const { error: insertErr } = await supabase.from("translation_cache").insert({
         source_text: text,
         source_lang: cacheSourceLang,
         target_lang: targetLang,
         translated_text: translatedText,
       });
-      console.log("Saved to translation cache.");
+      if (insertErr) {
+        console.warn("Failed to write to translation cache (DB error):", insertErr.message);
+      } else {
+        console.log("Saved to translation cache.");
+      }
     } catch (e) {
       console.warn("Failed to write to translation cache:", e);
     }
