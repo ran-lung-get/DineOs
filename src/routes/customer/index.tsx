@@ -690,7 +690,7 @@ function LiffApp() {
             name: item.name,
             desc: item.description || "",
             price: Number(item.price),
-            image: item.image || "",
+            image: item.image_url || item.image || "",
             category: item.category,
             isAvailable: item.is_available ?? true,
             isSpicy: item.is_spicy ?? false,
