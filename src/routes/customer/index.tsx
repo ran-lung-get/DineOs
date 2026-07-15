@@ -2309,6 +2309,7 @@ function ItemModal({
   checkOptionOutOfStock: (optionId: string) => boolean;
   cartLine?: CartLine;
 }) {
+  const { language, t, tMenu } = useLanguage();
   const [qty, setQty] = useState(cartLine ? cartLine.qty : 1);
   const [options, setOptions] = useState<Record<string, string>>(() => {
     if (cartLine) {
@@ -2407,28 +2408,32 @@ function ItemModal({
 
   // Custom formatted dish name for cart
   const formattedName = useMemo(() => {
-    if (!isFood) return item.name;
+    if (!isFood) return tMenu(item.name, "name");
 
-    let name = item.name;
+    let name = tMenu(item.name, "name");
     const defaultProtein = PROTEINS.find((p) => p.id === defaultProteinId);
     const proteinItem = PROTEINS.find((p) => p.id === protein);
 
     if (defaultProtein && proteinItem && defaultProtein.id !== proteinItem.id) {
-      const newProteinName = proteinItem.name === "ไม่เอาเนื้อสัตว์" ? "" : proteinItem.name;
-      if (name.includes(defaultProtein.name)) {
-        name = name.replace(defaultProtein.name, newProteinName);
+      const newProteinName = proteinItem.name === "ไม่เอาเนื้อสัตว์" ? "" : t(proteinItem.name);
+      const defaultProteinNameTranslated = t(defaultProtein.name);
+      if (name.includes(defaultProteinNameTranslated)) {
+        name = name.replace(defaultProteinNameTranslated, newProteinName);
       } else {
-        name = `${name} ${newProteinName}`;
+        name = name.trim() + " " + newProteinName;
       }
     }
 
     const sizeItem = SIZES.find((s) => s.id === size);
-    if (sizeItem && sizeItem.id === "s_special" && !name.includes("(พิเศษ)")) {
-      name += " (พิเศษ)";
+    if (sizeItem && sizeItem.id === "s_special") {
+      const specialLabel = ` (${t("พิเศษ")})`;
+      if (!name.includes(specialLabel)) {
+        name += specialLabel;
+      }
     }
 
     return name;
-  }, [item.name, isFood, defaultProteinId, protein, size]);
+  }, [item.name, isFood, defaultProteinId, protein, size, t, tMenu]);
 
   const handleAdd = () => {
     if (!isFood) {
@@ -2493,11 +2498,11 @@ function ItemModal({
         <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "#f1ece4" }}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">ปรับแต่ง</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t("ระบุความต้องการพิเศษ")}</p>
               <h2 className="text-2xl font-bold truncate" style={{ color: BRAND }}>
                 {formattedName}
               </h2>
-              <p className="mt-2 text-sm text-slate-600">{item.desc}</p>
+              <p className="mt-2 text-sm text-slate-600">{tMenu(item.desc, "desc")}</p>
               <p className="mt-3 text-xl font-bold" style={{ color: BRAND }}>
                 ฿{unitPrice}
               </p>
@@ -2517,10 +2522,10 @@ function ItemModal({
             <div key={g.id} className="mt-6">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-semibold" style={{ color: BRAND }}>
-                  {g.name}
+                  {t(g.name)}
                 </h3>
                 <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: "#fff2d6", color: BRAND }}>
-                  จำเป็น
+                  {t("จำเป็น")}
                 </span>
               </div>
               <div className="space-y-2">
@@ -2529,7 +2534,7 @@ function ItemModal({
                   return (
                     <button
                       key={c.id}
-                      aria-label={`เลือก ${c.label}`}
+                      aria-label={`เลือก ${t(c.label)}`}
                       onClick={() => setOptions({ ...options, [g.id]: c.id })}
                       className="w-full flex items-center justify-between rounded-xl border px-4 py-3 text-left"
                       style={{
@@ -2538,7 +2543,7 @@ function ItemModal({
                       }}
                     >
                       <span className="text-sm font-medium" style={{ color: BRAND }}>
-                        {c.label}
+                        {t(c.label)}
                       </span>
                       <span
                         className="grid h-5 w-5 place-items-center rounded-full border-2"
@@ -2559,10 +2564,10 @@ function ItemModal({
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-2.5">
                   <h3 className="font-semibold text-sm flex items-center gap-1.5" style={{ color: BRAND }}>
-                    🥩 เลือกวัตถุดิบหลัก
+                    🥩 {t("เลือกเนื้อสัตว์")}
                   </h3>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: "#fff2d6", color: BRAND }}>
-                    จำเป็น
+                    {t("จำเป็น")}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -2573,7 +2578,7 @@ function ItemModal({
                       <button
                         key={p.id}
                         disabled={isOutOfStock}
-                        aria-label={`เลือกวัตถุดิบ ${p.name}`}
+                        aria-label={`เลือกวัตถุดิบ ${t(p.name)}`}
                         onClick={() => setProtein(p.id)}
                         className="flex items-center justify-between rounded-xl border p-3 text-left transition duration-150 relative overflow-hidden"
                         style={{
@@ -2584,10 +2589,10 @@ function ItemModal({
                         }}
                       >
                         <span className={`text-xs font-semibold ${isOutOfStock ? "line-through text-slate-400" : ""}`} style={{ color: isOutOfStock ? undefined : BRAND }}>
-                          {p.name} {isOutOfStock && "(หมด)"}
+                          {t(p.name)} {isOutOfStock && `(${t("หมด")})`}
                         </span>
                         <span className="text-[11px] font-bold" style={{ color: active ? BRAND : INK_MUTED }}>
-                          {isOutOfStock ? "" : p.price > 0 ? `+${p.price} ฿` : "ฟรี"}
+                          {isOutOfStock ? "" : p.price > 0 ? `+${p.price} ฿` : t("ฟรี")}
                         </span>
                       </button>
                     );
@@ -2598,7 +2603,7 @@ function ItemModal({
               {/* Choose Size */}
               <div className="mt-6">
                 <h3 className="font-semibold text-sm flex items-center gap-1.5 mb-2.5" style={{ color: BRAND }}>
-                  ⚖️ เลือกขนาด
+                  ⚖️ {t("ขนาด")}
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   {SIZES.map((s) => {
@@ -2606,7 +2611,7 @@ function ItemModal({
                     return (
                       <button
                         key={s.id}
-                        aria-label={`เลือกขนาด ${s.name}`}
+                        aria-label={`เลือกขนาด ${t(s.name)}`}
                         onClick={() => setSize(s.id)}
                         className="flex items-center justify-between rounded-xl border px-4 py-3 text-left transition duration-150"
                         style={{
@@ -2615,10 +2620,10 @@ function ItemModal({
                         }}
                       >
                         <span className="text-xs font-semibold" style={{ color: BRAND }}>
-                          {s.name}
+                          {t(s.name)}
                         </span>
                         <span className="text-[11px] font-bold" style={{ color: BRAND }}>
-                          {s.price > 0 ? `+${s.price} ฿` : "ฟรี"}
+                          {s.price > 0 ? `+${s.price} ฿` : t("ฟรี")}
                         </span>
                       </button>
                     );
@@ -2629,20 +2634,20 @@ function ItemModal({
               {/* Choose Toppings */}
               <div className="mt-6">
                 <h3 className="font-semibold text-sm flex items-center gap-1.5 mb-2.5" style={{ color: BRAND }}>
-                  🥚 ท็อปปิ้งเพิ่มเติม (เลือกได้หลายรายการ)
+                  🥚 {t("เลือกท็อปปิ้งเพิ่มเติม")}
                 </h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {TOPPINGS.map((t) => {
-                    const active = selectedToppings.includes(t.id);
-                    const isOutOfStock = checkOptionOutOfStock(t.id);
+                  {TOPPINGS.map((topping) => {
+                    const active = selectedToppings.includes(topping.id);
+                    const isOutOfStock = checkOptionOutOfStock(topping.id);
                     return (
                       <button
-                        key={t.id}
+                        key={topping.id}
                         disabled={isOutOfStock}
-                        aria-label={`เลือกท็อปปิ้ง ${t.name}`}
+                        aria-label={`เลือกท็อปปิ้ง ${t(topping.name)}`}
                         onClick={() =>
                           setSelectedToppings((prev) =>
-                            active ? prev.filter((id) => id !== t.id) : [...prev, t.id]
+                            active ? prev.filter((id) => id !== topping.id) : [...prev, topping.id]
                           )
                         }
                         className="flex items-center justify-between rounded-xl border p-3 text-left transition duration-150 relative overflow-hidden"
@@ -2664,11 +2669,11 @@ function ItemModal({
                             {active && <Check size={10} color={GOLD} strokeWidth={4} />}
                           </span>
                           <span className={`text-xs font-medium ${isOutOfStock ? "line-through text-slate-400" : ""}`} style={{ color: isOutOfStock ? undefined : BRAND }}>
-                            {t.name} {isOutOfStock && "(หมด)"}
+                            {t(topping.name)} {isOutOfStock && `(${t("หมด")})`}
                           </span>
                         </span>
                         <span className="text-[11px] font-bold" style={{ color: BRAND }}>
-                          {isOutOfStock ? "" : `+${t.price} ฿`}
+                          {isOutOfStock ? "" : `+${topping.price} ฿`}
                         </span>
                       </button>
                     );
@@ -2680,7 +2685,7 @@ function ItemModal({
             item.addons && item.addons.length > 0 && (
               <div className="mt-6">
                 <h3 className="font-semibold mb-2" style={{ color: BRAND }}>
-                  เพิ่มเติม
+                  {t("เพิ่มเติม")}
                 </h3>
                 <div className="space-y-2">
                   {item.addons.map((a) => {
@@ -2800,6 +2805,7 @@ function MenuOverlay({
   subtotal: number;
   menuItems: MenuItem[];
 }) {
+  const { language, t, tMenu } = useLanguage();
   const [activeCat, setActiveCat] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("default");
@@ -2836,7 +2842,7 @@ function MenuOverlay({
     }
 
     return list;
-  }, [activeCat, searchQuery, sortBy]);
+  }, [activeCat, searchQuery, sortBy, menuItems]);
 
 
   return (
@@ -2857,7 +2863,7 @@ function MenuOverlay({
             <ChevronLeft size={20} />
           </button>
           <h1 className="text-lg font-bold text-center flex-1" style={{ color: BRAND }}>
-            รายการเมนู
+            {t("รายการเมนู")}
           </h1>
           <button
             onClick={onOpenCart}
@@ -2880,7 +2886,7 @@ function MenuOverlay({
             <Search size={16} className="text-slate-400" />
             <input
               aria-label="ค้นหาเมนู"
-              placeholder="ค้นหาเมนู..."
+              placeholder={t("ค้นหาเมนู...")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
@@ -2930,7 +2936,7 @@ function MenuOverlay({
                     style={{ background: BRAND }}
                   />
                 )}
-                <span className="relative">{cat.label}</span>
+                <span className="relative">{t(cat.label)}</span>
               </button>
             );
           })}
@@ -2954,12 +2960,12 @@ function MenuOverlay({
           ) : (
             filteredAndSortedItems.map((m) => (
               <div key={m.id} className="w-full bg-white rounded-2xl p-3 shadow-soft flex items-start gap-3">
-                <img src={encodeURI(String(m.image))} alt={m.name} className="h-20 w-20 rounded-xl object-cover flex-shrink-0" />
+                <img src={encodeURI(String(m.image))} alt={tMenu(m.name, "name")} className="h-20 w-20 rounded-xl object-cover flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div>
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-sm truncate" style={{ color: BRAND }}>{m.name}</h3>
-                      <p className="text-xs mt-1 text-slate-500 whitespace-normal">{m.desc}</p>
+                      <h3 className="font-semibold text-sm truncate" style={{ color: BRAND }}>{tMenu(m.name, "name")}</h3>
+                      <p className="text-xs mt-1 text-slate-500 whitespace-normal">{tMenu(m.desc, "desc")}</p>
                     </div>
                     <div className="mt-3 flex items-center justify-between">
                       <span className="font-bold text-lg" style={{ color: "#a16207" }}>฿{m.price}</span>
@@ -3006,7 +3012,7 @@ function MenuOverlay({
                     {totalQty}
                   </span>
                 </div>
-                <span className="font-medium">ดูตะกร้าสินค้า</span>
+                <span className="font-medium">{t("ดูตะกร้าสินค้า")}</span>
               </div>
               <span className="font-bold text-lg" style={{ color: GOLD }}>
                 ฿{subtotal}
@@ -3041,10 +3047,10 @@ function MenuOverlay({
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-bold flex items-center gap-1.5" style={{ color: BRAND }}>
                     <SlidersHorizontal size={16} />
-                    <span>เรียงลำดับตาม</span>
+                    <span>{t("เรียงลำดับตาม")}</span>
                   </h2>
                   <button onClick={() => setShowSortModal(false)} className="text-sm font-semibold" style={{ color: INK_MUTED }}>
-                    เสร็จสิ้น
+                    {t("เสร็จสิ้นการเลือก")}
                   </button>
                 </div>
               </div>
@@ -3070,8 +3076,8 @@ function MenuOverlay({
                       }}
                     >
                       <div>
-                        <p className="font-semibold text-sm" style={{ color: BRAND }}>{opt.label}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{opt.desc}</p>
+                        <p className="font-semibold text-sm" style={{ color: BRAND }}>{t(opt.label)}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{t(opt.desc)}</p>
                       </div>
                       <div
                         className="h-5 w-5 rounded-full border-2 flex items-center justify-center transition"

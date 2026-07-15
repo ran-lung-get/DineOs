@@ -1511,7 +1511,10 @@ function MenuManagementView() {
         if (payload.eventType === "DELETE") {
           setMenuItems(prev => prev.filter(m => m.id !== payload.old.id));
         } else if (payload.eventType === "INSERT") {
-          setMenuItems(prev => [...prev, payload.new as MenuItemDB].sort((a, b) => a.sort_order - b.sort_order));
+          setMenuItems(prev => {
+            if (prev.some(m => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new as MenuItemDB].sort((a, b) => a.sort_order - b.sort_order);
+          });
         } else if (payload.eventType === "UPDATE") {
           setMenuItems(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m));
         }
@@ -1600,7 +1603,10 @@ function MenuManagementView() {
         const newId = generateId(formName);
         const { data, error } = await supabase.from("menu_items").insert({ ...payload, id: newId }).select().single();
         if (error) throw error;
-        setMenuItems(prev => [...prev, data as MenuItemDB].sort((a, b) => a.sort_order - b.sort_order));
+        setMenuItems(prev => {
+          if (prev.some(m => m.id === data.id)) return prev;
+          return [...prev, data as MenuItemDB].sort((a, b) => a.sort_order - b.sort_order);
+        });
       }
       setIsFormOpen(false);
     } catch (e: any) {
