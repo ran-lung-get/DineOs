@@ -143,7 +143,7 @@ function RootComponent() {
 
           // Force logout in real-time if the user's role or active status changed
           if (payload.table === "users" && payload.eventType === "UPDATE") {
-            supabase.auth.getUser().then(({ data: { user } }) => {
+            supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
               if (user && payload.new && payload.new.auth_user_id === user.id) {
                 if (payload.new.is_active === false) {
                   alert("สิทธิ์การใช้งานของคุณถูกระงับ (Account Suspended)");

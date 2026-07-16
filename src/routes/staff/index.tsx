@@ -298,6 +298,9 @@ function KitchenMonitor() {
   }, []);
   const [view, setView] = useState<"kitchen" | "tables" | "menu">("kitchen");
 
+  // track last known pending IDs for sound notification
+  const lastPendingIdsRef = useRef<Set<string>>(new Set());
+
   const fetchSupabaseOrders = async () => {
     try {
       const { data: dbOrders, error: dbOrdersError } = await supabase
@@ -341,6 +344,16 @@ function KitchenMonitor() {
             note: o.special_instructions || ""
           };
         });
+
+        // Play sound when new pending order arrives from Supabase
+        const newPendingIds = new Set(
+          mappedOrders.filter(o => o.status === "รอดำเนินการ").map(o => o.id)
+        );
+        const hasNewOrder = [...newPendingIds].some(id => !lastPendingIdsRef.current.has(id));
+        if (hasNewOrder && lastPendingIdsRef.current.size > 0 && soundEnabled) {
+          playNotificationSound();
+        }
+        lastPendingIdsRef.current = newPendingIds;
 
         setOrders((prev) => {
           const localOnly = prev.filter(p => !p.id.startsWith("hist_") && !p.id.includes("-") && !mappedOrders.some(m => m.id === p.id));
@@ -459,10 +472,27 @@ function KitchenMonitor() {
 
   const cancelOrder = async (id: string) => {
     if (!confirm("คุณต้องการยกเลิกคำสั่งซื้อนี้ใช่หรือไม่?")) return;
+    const targetOrder = orders.find(o => o.id === id);
     const nextList = orders.map((o) => (o.id === id ? { ...o, status: "ยกเลิก" } : o));
     setOrders(nextList);
     localStorage.setItem("ran-lung-get-orders", JSON.stringify(nextList));
-    try { await supabase.from("orders").update({ status: "cancelled" }).eq("id", id); } catch { }
+    try { 
+      await supabase.from("orders").update({ status: "cancelled" }).eq("id", id);
+      // Auto-release table when no active orders remain
+      if (targetOrder?.tableNumber) {
+        const remaining = nextList.filter(o =>
+          o.tableNumber === targetOrder.tableNumber &&
+          o.id !== id &&
+          (o.status === "รอดำเนินการ" || o.status === "กำลังทำ" || o.status === "พร้อมเสิร์ฟ")
+        );
+        if (remaining.length === 0) {
+          await (supabase as any)
+            .from("restaurant_tables")
+            .update({ status: "available" })
+            .or(`label.eq.${targetOrder.tableNumber},label.eq.โต๊ะ ${targetOrder.tableNumber}`);
+        }
+      }
+    } catch { console.warn("Offline cancel completed locally."); }
   };
 
   const clearCompletedOrders = () => {

@@ -47,7 +47,7 @@ export type Database = {
     Enums: {
       order_status: "pending" | "preparing" | "delivering" | "completed" | "cancelled";
       order_type: "dine-in" | "takeaway" | "delivery";
-      user_role: "admin" | "staff" | "customer";
+      user_role: "admin" | "staff" | "customer" | "captain";
     };
   };
 };
@@ -76,12 +76,14 @@ export type TableUpdate = Partial<TableInsert>;
 // ── Users (ผู้ใช้งาน LINE) ──────────────────────────────────────
 export type UserRow = {
   id: string;
+  auth_user_id: string | null;
   line_user_id: string;
   display_name: string;
+  email: string | null;
   picture_url: string | null;
   status_message: string | null;
   is_active: boolean;
-  role: "admin" | "staff" | "customer";
+  role: "admin" | "staff" | "customer" | "captain";
   created_at: string;
   updated_at: string;
   last_login_at: string;
@@ -89,12 +91,14 @@ export type UserRow = {
 
 export type UserInsert = {
   id?: string;
+  auth_user_id?: string | null;
   line_user_id: string;
   display_name: string;
+  email?: string | null;
   picture_url?: string | null;
   status_message?: string | null;
   is_active?: boolean;
-  role?: "admin" | "staff" | "customer";
+  role?: "admin" | "staff" | "customer" | "captain";
   created_at?: string;
   updated_at?: string;
   last_login_at?: string;

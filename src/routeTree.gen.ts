@@ -9,28 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TestTranslationRouteImport } from './routes/test-translation'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as KitchenRouteImport } from './routes/kitchen'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StaffIndexRouteImport } from './routes/staff/index'
 import { Route as CustomerIndexRouteImport } from './routes/customer/index'
 import { Route as CaptainIndexRouteImport } from './routes/captain/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 
-const TestTranslationRoute = TestTranslationRouteImport.update({
-  id: '/test-translation',
-  path: '/test-translation',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KitchenRoute = KitchenRouteImport.update({
-  id: '/kitchen',
-  path: '/kitchen',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -61,9 +49,7 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/kitchen': typeof KitchenRoute
   '/login': typeof LoginRoute
-  '/test-translation': typeof TestTranslationRoute
   '/admin/': typeof AdminIndexRoute
   '/captain/': typeof CaptainIndexRoute
   '/customer/': typeof CustomerIndexRoute
@@ -71,9 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/kitchen': typeof KitchenRoute
   '/login': typeof LoginRoute
-  '/test-translation': typeof TestTranslationRoute
   '/admin': typeof AdminIndexRoute
   '/captain': typeof CaptainIndexRoute
   '/customer': typeof CustomerIndexRoute
@@ -82,9 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/kitchen': typeof KitchenRoute
   '/login': typeof LoginRoute
-  '/test-translation': typeof TestTranslationRoute
   '/admin/': typeof AdminIndexRoute
   '/captain/': typeof CaptainIndexRoute
   '/customer/': typeof CustomerIndexRoute
@@ -92,31 +74,13 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/kitchen'
-    | '/login'
-    | '/test-translation'
-    | '/admin/'
-    | '/captain/'
-    | '/customer/'
-    | '/staff/'
+  fullPaths: '/' | '/login' | '/admin/' | '/captain/' | '/customer/' | '/staff/'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/kitchen'
-    | '/login'
-    | '/test-translation'
-    | '/admin'
-    | '/captain'
-    | '/customer'
-    | '/staff'
+  to: '/' | '/login' | '/admin' | '/captain' | '/customer' | '/staff'
   id:
     | '__root__'
     | '/'
-    | '/kitchen'
     | '/login'
-    | '/test-translation'
     | '/admin/'
     | '/captain/'
     | '/customer/'
@@ -125,9 +89,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  KitchenRoute: typeof KitchenRoute
   LoginRoute: typeof LoginRoute
-  TestTranslationRoute: typeof TestTranslationRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CaptainIndexRoute: typeof CaptainIndexRoute
   CustomerIndexRoute: typeof CustomerIndexRoute
@@ -136,25 +98,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/test-translation': {
-      id: '/test-translation'
-      path: '/test-translation'
-      fullPath: '/test-translation'
-      preLoaderRoute: typeof TestTranslationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/kitchen': {
-      id: '/kitchen'
-      path: '/kitchen'
-      fullPath: '/kitchen'
-      preLoaderRoute: typeof KitchenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -197,9 +145,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  KitchenRoute: KitchenRoute,
   LoginRoute: LoginRoute,
-  TestTranslationRoute: TestTranslationRoute,
   AdminIndexRoute: AdminIndexRoute,
   CaptainIndexRoute: CaptainIndexRoute,
   CustomerIndexRoute: CustomerIndexRoute,

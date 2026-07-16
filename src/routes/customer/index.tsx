@@ -341,7 +341,7 @@ type OrderHistory = {
   subtotal: number;
   delivery: number;
   total: number;
-  status: "สำเร็จ" | "กำลังจัดส่ง" | "กำลังเตรียม" | "รอรับออเดอร์" | "ขอคืนเงิน" | "ยกเลิกแล้ว" | "รอดำเนินการ";
+  status: "สำเร็จ" | "กำลังจัดส่ง" | "กำลังเตรียม" | "รอรับออเดอร์" | "ขอคืนเงิน" | "ยกเลิกแล้ว" | "รอดำเนินการ" | "กำลังทำ" | "พร้อมเสิร์ฟ" | "ยกเลิก";
   orderType?: OrderType;
   cancelReason?: string;
   cancelNote?: string;
@@ -366,6 +366,49 @@ function LiffApp() {
   const [profile, setProfile] = useState<LiffProfile | null>(null);
   const { language, setLanguage, t, tMenu } = useLanguage();
 
+  // Dynamic menu from Supabase (overrides/extends hardcoded MENU if data exists)
+  const [dbMenu, setDbMenu] = useState<MenuItem[]>([]);
+  const effectiveMenu = dbMenu.length > 0 ? dbMenu : MENU;
+
+  useEffect(() => {
+    const fetchMenu = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from("menu_items")
+          .select("*")
+          .eq("is_available", true)
+          .order("sort_order", { ascending: true });
+        if (!error && data && data.length > 0) {
+          const mapped: MenuItem[] = data.map((item: any) => ({
+            id: item.id,
+            name: item.name_th || item.name,
+            desc: item.description_th || item.description || "",
+            price: Number(item.price),
+            image: item.image_url || "",
+            category: item.category || "main",
+            spicy: item.is_spicy || false,
+            options: item.options || [],
+            addons: item.addons || [],
+          }));
+          setDbMenu(mapped);
+        }
+      } catch {
+        // silently fall back to hardcoded MENU
+      }
+    };
+    fetchMenu();
+
+    // Real-time menu updates
+    const menuCh = (supabase as any)
+      .channel("customer-menu-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
+        fetchMenu();
+      })
+      .subscribe();
+    return () => { (supabase as any).removeChannel(menuCh); };
+  }, []);
+
+
   // Load WebAvatar widget for customer route only
   useEffect(() => {
     // Set up ChatWidgetConfig
@@ -374,7 +417,7 @@ function LiffApp() {
       widgetId: "ran-lung-get",
       avatarUrl: "Botnoi",
       container: "#webavatar-container",
-      greetingInstruction: "",
+      greetingInstruction: "สวัสดี! ฉันคือผู้ช่วยร้านลุงเกตุ คุณสามารถสั่งให้ฉันกดสั่งอาหาร ค้นหาเมนู หรือเปลี่ยนหน้าจอได้เลยค่ะ",
       enableBubble: "true",
       cameraOffset: "0,0,0"
     };
@@ -494,17 +537,99 @@ function LiffApp() {
     };
   }, [navigate]);
 
-  // Load orders from localStorage and listen for changes (cross-tab sync)
+
+  // Load and real-time sync orders from Supabase (for logged-in user)
+  // These states must be declared BEFORE the useEffect that uses them
+  const [dbUser, setDbUser] = useState<any>(null);
+  const [dbCustomer, setDbCustomer] = useState<any>(null);
+
   useEffect(() => {
+    let channel: any = null;
+
+    const fetchUserOrders = async (authUserId?: string) => {
+      try {
+        // Get current user's auth ID
+        const targetId = authUserId || dbUser?.auth_user_id;
+        
+        let query = (supabase as any)
+          .from("orders")
+          .select("*, order_items(*)")
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (targetId) {
+          query = query.eq("user_id", dbUser?.id || targetId);
+        }
+
+        const { data: dbOrders, error } = await query;
+        if (error || !dbOrders) return;
+
+        const mapped: OrderHistory[] = dbOrders.map((o: any) => {
+          let localStatus = "รอรับออเดอร์";
+          if (o.status === "pending") localStatus = "รอดำเนินการ";
+          else if (o.status === "preparing") localStatus = "กำลังทำ";
+          else if (o.status === "delivering") localStatus = "พร้อมเสิร์ฟ";
+          else if (o.status === "completed") localStatus = "สำเร็จ";
+          else if (o.status === "cancelled") localStatus = "ยกเลิก";
+
+          return {
+            id: o.id,
+            orderNumber: o.order_number,
+            date: new Date(o.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) + " · " + new Date(o.created_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+            items: (o.order_items || []).map((item: any) => ({
+              name: item.name,
+              qty: item.quantity,
+              price: Number(item.unit_price),
+              image: item.image || ""
+            })),
+            subtotal: Number(o.subtotal),
+            delivery: Number(o.delivery_fee),
+            total: Number(o.total),
+            status: localStatus,
+            orderType: o.order_type,
+            tableNumber: o.table_number || "",
+            queueNumber: o.queue_number || "",
+            note: o.special_instructions || ""
+          };
+        });
+
+        setOrderHistory(prev => {
+          // Merge: keep local-only entries (hist_xxx) that aren't in Supabase yet
+          const localOnly = prev.filter(p => p.id.startsWith("hist_"));
+          const combined = [...mapped, ...localOnly];
+          localStorage.setItem("ran-lung-get-orders", JSON.stringify(combined));
+          return combined;
+        });
+      } catch (e) {
+        // fallback to localStorage
+        const saved = localStorage.getItem("ran-lung-get-orders");
+        if (saved) {
+          try { setOrderHistory(JSON.parse(saved)); } catch {}
+        }
+      }
+    };
+
+    // Initial load from localStorage immediately for fast render
     const saved = localStorage.getItem("ran-lung-get-orders");
     if (saved) {
-      try {
-        setOrderHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse orders from storage:", e);
-      }
+      try { setOrderHistory(JSON.parse(saved)); } catch {}
     }
 
+    // Then fetch from Supabase
+    fetchUserOrders();
+
+    // Real-time subscription to orders table
+    channel = supabase
+      .channel("customer-orders-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        fetchUserOrders();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_items" }, () => {
+        fetchUserOrders();
+      })
+      .subscribe();
+
+    // Also sync from storage events (cross-tab)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "ran-lung-get-orders" && e.newValue) {
         try {
@@ -516,12 +641,17 @@ function LiffApp() {
       }
     };
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      if (channel) supabase.removeChannel(channel);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbUser?.id]);
+
 
   const [tab, setTab] = useState<"home" | "status">("home");
-  const [dbUser, setDbUser] = useState<any>(null);
-  const [dbCustomer, setDbCustomer] = useState<any>(null);
+  // dbUser and dbCustomer are declared earlier (before the order history useEffect)
   const [overlay, setOverlay] = useState<null | "menu" | "orderConfirm" | "payment" | "history" | "contact">(null);
   const [sidebar, setSidebar] = useState(false);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -1002,6 +1132,7 @@ function LiffApp() {
                   setShowAddressError={setShowAddressError}
                   showTypeError={showTypeError}
                   setShowTypeError={setShowTypeError}
+                  menuItems={effectiveMenu}
                 />
               )}
               {tab === "status" && (
@@ -1048,6 +1179,7 @@ function LiffApp() {
               onOpenCart={() => setCartDrawer(true)}
               totalQty={totalQty}
               subtotal={subtotal}
+              items={effectiveMenu}
             />
           )}
           {overlay === "orderConfirm" && (
@@ -1254,7 +1386,7 @@ function LiffApp() {
         {/* WebAvatar container positioned in the bottom-right corner of the main app frame */}
         <div
           id="webavatar-container"
-          className={`absolute bottom-6 right-4 z-40 transition-opacity duration-300 ${tab === "home" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+          className="absolute bottom-6 right-4 z-40 transition-opacity duration-300 opacity-100 pointer-events-auto"
           style={{
             width: "100px",
             height: "100px",
@@ -1529,6 +1661,7 @@ function HomeScreen({
   setShowTypeError,
   isCurrentlyClosed,
   bypassRealClosed,
+  menuItems,
 }: {
   onOpenSidebar: () => void;
   orderType: OrderType | null;
@@ -1558,7 +1691,9 @@ function HomeScreen({
   setShowTypeError: (val: boolean) => void;
   isCurrentlyClosed: boolean;
   bypassRealClosed: boolean;
+  menuItems?: MenuItem[];
 }) {
+  const effectiveHomeItems = menuItems && menuItems.length > 0 ? menuItems : MENU;
   const { language, setLanguage, t, tMenu } = useLanguage();
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1888,7 +2023,7 @@ function HomeScreen({
           </button>
           <div ref={scrollRef} className="-mx-5 px-10 overflow-x-auto no-scrollbar scroll-smooth">
             <div className="flex gap-4">
-              {MENU.filter((m) => m.category !== "drinks" && m.category !== "dessert").map((m, i) => (
+              {effectiveHomeItems.filter((m) => m.category !== "drinks" && m.category !== "dessert").map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, y: 12 }}
@@ -2641,13 +2776,16 @@ function MenuOverlay({
   onOpenCart,
   totalQty,
   subtotal,
+  items: menuItems,
 }: {
   onBack: () => void;
   onPickItem: (m: MenuItem) => void;
   onOpenCart: () => void;
   totalQty: number;
   subtotal: number;
+  items?: MenuItem[];
 }) {
+  const effectiveItems = menuItems && menuItems.length > 0 ? menuItems : MENU;
   const [activeCat, setActiveCat] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("default");
@@ -2663,10 +2801,10 @@ function MenuOverlay({
   // Filter and sort items dynamically
   const filteredAndSortedItems = useMemo(() => {
     let list = activeCat === "all"
-      ? MENU.filter((m) => m.category === "signature")
+      ? effectiveItems.filter((m) => m.category === "signature")
       : activeCat === "signature"
-        ? MENU.filter((m) => m.category !== "drinks" && m.category !== "dessert")
-        : MENU.filter((m) => m.category === activeCat);
+        ? effectiveItems.filter((m) => m.category !== "drinks" && m.category !== "dessert")
+        : effectiveItems.filter((m) => m.category === activeCat);
 
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
@@ -2684,7 +2822,7 @@ function MenuOverlay({
     }
 
     return list;
-  }, [activeCat, searchQuery, sortBy]);
+  }, [activeCat, searchQuery, sortBy, effectiveItems]);
 
 
   return (
@@ -3452,25 +3590,52 @@ function StatusScreen({
   const [errorText, setErrorText] = useState("");
 
   const orderType = activeOrder?.orderType || "delivery";
-  const currentStatus = activeOrder?.status || "รอรับออเดอร์";
+  const currentStatus = activeOrder?.status || "รอดำเนินการ";
+
+  // Status steps mapped to DB values (pending→รอดำเนินการ, preparing→กำลังทำ, delivering→พร้อมเสิร์ฟ, completed→สำเร็จ)
+  const isPending   = currentStatus === "รอดำเนินการ" || currentStatus === "รอรับออเดอร์";
+  const isPreparing = currentStatus === "กำลังทำ";
+  const isReady     = currentStatus === "พร้อมเสิร์ฟ";
+  const isDone      = currentStatus === "สำเร็จ";
+  const isCancelled = currentStatus === "ยกเลิก" || currentStatus === "ยกเลิกแล้ว";
 
   const steps = orderType === "dine-in"
     ? [
-      { id: 1, label: "รับออเดอร์", icon: Check, done: currentStatus !== "รอรับออเดอร์", active: currentStatus === "รอรับออเดอร์" },
-      { id: 2, label: "กำลังทำอาหาร", icon: ChefHat, done: currentStatus === "สำเร็จ", active: currentStatus === "กำลังเตรียม" },
-      { id: 3, label: "เสร็จสิ้น", icon: PartyPopper, done: currentStatus === "สำเร็จ", active: false },
+      { id: 1, label: "รับออเดอร์", icon: Check,
+        done: isPreparing || isReady || isDone,
+        active: isPending },
+      { id: 2, label: "กำลังทำอาหาร", icon: ChefHat,
+        done: isReady || isDone,
+        active: isPreparing },
+      { id: 3, label: "เสร็จสิ้น / เสิร์ฟแล้ว", icon: PartyPopper,
+        done: isDone,
+        active: isReady },
     ]
     : orderType === "takeaway"
       ? [
-        { id: 1, label: "รับออเดอร์", icon: Check, done: currentStatus !== "รอรับออเดอร์", active: currentStatus === "รอรับออเดอร์" },
-        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat, done: currentStatus === "สำเร็จ", active: currentStatus === "กำลังเตรียม" },
-        { id: 3, label: "พร้อมรับอาหาร", icon: ShoppingBag, done: currentStatus === "สำเร็จ", active: false },
+        { id: 1, label: "รับออเดอร์", icon: Check,
+          done: isPreparing || isReady || isDone,
+          active: isPending },
+        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat,
+          done: isReady || isDone,
+          active: isPreparing },
+        { id: 3, label: "พร้อมรับอาหาร", icon: ShoppingBag,
+          done: isDone,
+          active: isReady },
       ]
       : [
-        { id: 1, label: "รับออเดอร์", icon: Check, done: currentStatus !== "รอรับออเดอร์", active: currentStatus === "รอรับออเดอร์" },
-        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat, done: currentStatus === "กำลังจัดส่ง" || currentStatus === "สำเร็จ", active: currentStatus === "กำลังเตรียม" },
-        { id: 3, label: "คนรับอาหาร/กำลังขับไป", icon: Bike, done: currentStatus === "สำเร็จ", active: currentStatus === "กำลังจัดส่ง" },
-        { id: 4, label: "เสร็จสิ้น", icon: PartyPopper, done: currentStatus === "สำเร็จ", active: false },
+        { id: 1, label: "รับออเดอร์", icon: Check,
+          done: isPreparing || isReady || isDone,
+          active: isPending },
+        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat,
+          done: isReady || isDone,
+          active: isPreparing },
+        { id: 3, label: "คนรับอาหาร/กำลังขับไป", icon: Bike,
+          done: isDone,
+          active: isReady },
+        { id: 4, label: "เสร็จสิ้น", icon: PartyPopper,
+          done: isDone,
+          active: false },
       ];
 
   const orderItems = activeOrder
@@ -3487,38 +3652,56 @@ function StatusScreen({
       return {
         title: "ยื่นขอคืนเงินแล้ว",
         subtitle: "ร้านค้ากำลังตรวจสอบและโอนเงินคืนตามพร้อมเพย์ที่ท่านระบุ",
-        color: "#f59e0b", // Amber
+        color: "#f59e0b",
         bg: "rgba(245, 158, 11, 0.08)",
         iconColor: "#f59e0b"
       };
     }
-    if (currentStatus === "ยกเลิกแล้ว") {
+    if (isCancelled) {
       return {
         title: "ออเดอร์ถูกยกเลิกแล้ว",
         subtitle: "การคืนเงินสำเร็จหรือยกเลิกคำสั่งซื้อเรียบร้อยแล้ว",
-        color: "#ef4444", // Red
+        color: "#ef4444",
         bg: "rgba(239, 68, 68, 0.08)",
         iconColor: "#ef4444"
       };
     }
-    if (currentStatus === "รอรับออเดอร์") {
+    if (isDone) {
       return {
-        title: "กำลังรอรับออเดอร์",
-        subtitle: "ร้านค้ากำลังตรวจสอบสลิปและเตรียมเข้าครัว",
-        color: "#3b82f6", // Blue
+        title: "รายการสำเร็จ 🎉",
+        subtitle: orderType === "dine-in" ? "อาหารเสิร์ฟเรียบร้อยแล้ว ขอบคุณที่มาทาน!" : "อาหารส่งถึงมือคุณแล้ว ขอบคุณที่ใช้บริการ!",
+        color: "#10b981",
+        bg: "rgba(16, 185, 129, 0.08)",
+        iconColor: "#10b981"
+      };
+    }
+    if (isReady) {
+      return {
+        title: orderType === "dine-in" ? "อาหารพร้อมเสิร์ฟ! 🍽️" : orderType === "takeaway" ? "อาหารพร้อมรับแล้ว! 🛍️" : "กำลังส่งอาหาร! 🛵",
+        subtitle: orderType === "dine-in" ? "พนักงานกำลังนำอาหารมาเสิร์ฟ" : orderType === "takeaway" ? "กรุณาแสดงหมายเลขคิวที่เคาน์เตอร์" : "ไรเดอร์กำลังเดินทาง",
+        color: "#6366f1",
+        bg: "rgba(99, 102, 241, 0.08)",
+        iconColor: "#6366f1"
+      };
+    }
+    if (isPreparing) {
+      return {
+        title: "กำลังปรุงอาหาร 👨‍🍳",
+        subtitle: orderType === "dine-in" ? "รอเสิร์ฟอาหารในอีกสักครู่" : "รอรับอาหารในอีกสักครู่",
+        color: "#3b82f6",
         bg: "rgba(59, 130, 246, 0.08)",
         iconColor: "#3b82f6"
       };
     }
-    // สำหรับสถานะเตรียมอาหาร หรือจัดส่งสำเร็จ
+    // isPending / default
     return {
-      title: currentStatus === "สำเร็จ" ? "รายการสำเร็จ" : "กำลังดำเนินการ",
-      subtitle: orderType === "dine-in" ? "รอเสิร์ฟอาหารในอีก 10 นาที" : "รอรับอาหารในอีก 14 นาที",
-      color: "#10b981", // Emerald
-      bg: "rgba(16, 185, 129, 0.08)",
-      iconColor: "#10b981"
+      title: "กำลังรอรับออเดอร์",
+      subtitle: "ร้านค้ารับออเดอร์แล้ว กำลังเตรียมเข้าครัว",
+      color: "#f59e0b",
+      bg: "rgba(245, 158, 11, 0.08)",
+      iconColor: "#f59e0b"
     };
-  }, [currentStatus, orderType]);
+  }, [currentStatus, orderType, isPending, isPreparing, isReady, isDone, isCancelled]);
 
   const cancelReasonsList = [
     "สั่งอาหารผิดเมนู / ลืมเพิ่มบางรายการ",
@@ -3541,29 +3724,36 @@ function StatusScreen({
       return;
     }
 
-    // Save cancellation state to localStorage
-    const saved = localStorage.getItem("ran-lung-get-orders");
-    if (saved && activeOrder) {
+    // Save cancellation state to localStorage and Supabase
+    if (activeOrder) {
       try {
-        const history: OrderHistory[] = JSON.parse(saved);
-        const updated = history.map(o => {
-          if (o.orderNumber === activeOrder.orderNumber) {
-            return {
-              ...o,
-              status: "ขอคืนเงิน" as const,
-              cancelReason: selectedReason,
-              cancelNote: customReason,
-              refundPromptPay: promptPayNumber
-            };
-          }
-          return o;
-        });
-        localStorage.setItem("ran-lung-get-orders", JSON.stringify(updated));
-        // dispatch storage event manually for same-page listeners if needed
-        window.dispatchEvent(new StorageEvent("storage", {
-          key: "ran-lung-get-orders",
-          newValue: JSON.stringify(updated)
-        }));
+        const saved = localStorage.getItem("ran-lung-get-orders");
+        if (saved) {
+          const history: OrderHistory[] = JSON.parse(saved);
+          const updated = history.map(o => {
+            if (o.orderNumber === activeOrder.orderNumber) {
+              return {
+                ...o,
+                status: "ขอคืนเงิน" as const,
+                cancelReason: selectedReason,
+                cancelNote: customReason,
+                refundPromptPay: promptPayNumber
+              };
+            }
+            return o;
+          });
+          localStorage.setItem("ran-lung-get-orders", JSON.stringify(updated));
+          window.dispatchEvent(new StorageEvent("storage", {
+            key: "ran-lung-get-orders",
+            newValue: JSON.stringify(updated)
+          }));
+        }
+        // Also update Supabase if order has a DB ID (not hist_ prefix)
+        if (activeOrder.id && !activeOrder.id.startsWith("hist_")) {
+          void supabase.from("orders").update({
+            status: "cancelled",
+          }).eq("id", activeOrder.id);
+        }
       } catch (e) {
         console.error("Cancel failed:", e);
       }
