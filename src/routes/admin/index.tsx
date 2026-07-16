@@ -8,7 +8,7 @@ import {
   addIngredient, 
   deleteIngredient 
 } from "../../lib/supabase.service";
-import { MENU } from "../customer/index";
+
 import {
   ResponsiveContainer,
   AreaChart,
@@ -90,9 +90,10 @@ function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
-  const [outOfStockIds, setOutOfStockIds] = useState<string[]>([]);
+  const [dbMenu, setDbMenu] = useState<any[]>([]);
+  const [loadingMenu, setLoadingMenu] = useState(false);
 
-  // Add ingredient form states
+  // New ingredient form states
   const [newIngName, setNewIngName] = useState("");
   const [newIngQty, setNewIngQty] = useState("");
   const [newIngUnit, setNewIngUnit] = useState("g");
@@ -213,26 +214,31 @@ function AdminDashboard() {
       if (data && data.length > 0) {
         setIngredients(data);
       } else {
-        // Fallback to localStorage mock data
-        const localIng = localStorage.getItem("ran-lung-get-mock-ingredients");
-        if (localIng) {
-          setIngredients(JSON.parse(localIng));
-        } else {
-          const defaults = [
-            { id: "mock-1", name: "หมูสับ", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-2", name: "หมูกรอบ", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-3", name: "หมูชิ้น", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-4", name: "ไก่สับ", quantity: 1000, unit: "g", min_threshold: 200, is_active: true },
-            { id: "mock-10", name: "ไข่ไก่", quantity: 100, unit: "pcs", min_threshold: 15, is_active: true },
-          ];
-          setIngredients(defaults);
-          localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(defaults));
-        }
+        setIngredients([]);
       }
     } catch (err) {
       console.error("Load stock error:", err);
+      setIngredients([]);
     } finally {
       setLoadingIngredients(false);
+    }
+  };
+
+  // 3.5 Fetch Menu Items
+  const fetchMenu = async () => {
+    setLoadingMenu(true);
+    try {
+      const { data, error } = await supabase
+        .from("menu_items")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      if (!error && data) {
+        setDbMenu(data);
+      }
+    } catch (e) {
+      console.error("Failed to load menu items:", e);
+    } finally {
+      setLoadingMenu(false);
     }
   };
 
@@ -270,16 +276,25 @@ function AdminDashboard() {
       fetchSupabaseOrders();
     } else if (view === "inventory") {
       fetchIngredients();
-      const savedOutOfStock = localStorage.getItem("ran-lung-get-out-of-stock-items");
-      if (savedOutOfStock) {
-        try {
-          setOutOfStockIds(JSON.parse(savedOutOfStock));
-        } catch {}
-      }
+      fetchMenu();
     } else if (view === "staff" || view === "approvals") {
       fetchUsers();
     }
   }, [view, checkingAuth]);
+
+  // Realtime subscriptions for inventory and menu
+  useEffect(() => {
+    const invCh = supabase
+      .channel('admin-inventory-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => {
+        if (view === "inventory") fetchIngredients();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => {
+        if (view === "inventory") fetchMenu();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(invCh); };
+  }, [view]);
 
   // Realtime subscription for users table
   useEffect(() => {
@@ -354,19 +369,18 @@ function AdminDashboard() {
   };
 
   // Inventory logic copy from staff
-  const toggleStock = (itemId: string) => {
-    let updated: string[];
-    if (outOfStockIds.includes(itemId)) {
-      updated = outOfStockIds.filter(id => id !== itemId);
-    } else {
-      updated = [...outOfStockIds, itemId];
+  const toggleStock = async (itemId: string) => {
+    const item = dbMenu.find(m => m.id === itemId);
+    if (!item) return;
+    const nextAvailability = !item.is_available;
+    
+    setDbMenu(prev => prev.map(m => m.id === itemId ? { ...m, is_available: nextAvailability } : m));
+    
+    try {
+      await supabase.from("menu_items").update({ is_available: nextAvailability }).eq("id", itemId);
+    } catch {
+      console.warn("Failed to update stock status in Supabase.");
     }
-    setOutOfStockIds(updated);
-    localStorage.setItem("ran-lung-get-out-of-stock-items", JSON.stringify(updated));
-    window.dispatchEvent(new StorageEvent("storage", {
-      key: "ran-lung-get-out-of-stock-items",
-      newValue: JSON.stringify(updated),
-    }));
   };
 
   const adjustIngredientQty = async (id: string, amount: number) => {
@@ -376,10 +390,9 @@ function AdminDashboard() {
 
     const updated = ingredients.map(i => i.id === id ? { ...i, quantity: newQty } : i);
     setIngredients(updated);
-    localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(updated));
 
     try {
-      await updateIngredientStock(id, newQty);
+      await updateIngredientStock(id, { quantity: newQty });
     } catch {
       console.warn("Supabase stock update failed.");
     }
@@ -395,25 +408,21 @@ function AdminDashboard() {
     }
 
     const newItem = {
-      id: "mock-" + Date.now(),
       name: newIngName.trim(),
       quantity: q,
       unit: newIngUnit,
       min_threshold: t,
-      is_active: true
     };
 
-    setIngredients(prev => [newItem, ...prev]);
-    setNewIngName("");
-    setNewIngQty("");
-    setNewIngThreshold("");
-    setShowAddForm(false);
-
     try {
-      await addIngredient(newIngName.trim(), q, newIngUnit, t);
-      fetchIngredients();
+      const added = await addIngredient(newItem);
+      setIngredients(prev => [added, ...prev]);
+      setNewIngName("");
+      setNewIngQty("");
+      setNewIngThreshold("");
+      setShowAddForm(false);
     } catch {
-      console.warn("Supabase insert skipped (saved locally).");
+      console.warn("Supabase insert failed.");
     }
   };
 
@@ -425,17 +434,15 @@ function AdminDashboard() {
       return;
     }
 
-    setIngredients(prev => prev.map(i => i.id === id ? {
-      ...i,
-      name: editName.trim(),
-      quantity: q,
-      unit: editUnit,
-      min_threshold: t
-    } : i));
-    setEditingId(null);
-
     try {
-      await updateIngredientStock(id, q, editName.trim(), editUnit, t);
+      const updated = await updateIngredientStock(id, {
+        name: editName.trim(),
+        quantity: q,
+        unit: editUnit,
+        min_threshold: t
+      });
+      setIngredients(prev => prev.map(i => i.id === id ? updated : i));
+      setEditingId(null);
     } catch {
       console.warn("Supabase edit update failed.");
     }
@@ -584,7 +591,7 @@ function AdminDashboard() {
               setSelectedCategory={setSelectedCategory}
               showAddForm={showAddForm}
               setShowAddForm={setShowAddForm}
-              outOfStockIds={outOfStockIds}
+              dbMenu={dbMenu}
               toggleStock={toggleStock}
               adjustIngredientQty={adjustIngredientQty}
               handleAddIngredientSubmit={handleAddIngredientSubmit}
@@ -1129,7 +1136,7 @@ function AdminInventoryView({
   setSelectedCategory,
   showAddForm,
   setShowAddForm,
-  outOfStockIds,
+  dbMenu,
   toggleStock,
   adjustIngredientQty,
   handleAddIngredientSubmit,
@@ -1207,13 +1214,15 @@ function AdminInventoryView({
   ];
 
   const filteredMenuItems = useMemo(() => {
-    return MENU.filter(item => {
-      const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.desc.toLowerCase().includes(searchQuery.toLowerCase());
+    return dbMenu.filter(item => {
+      const itemName = item.name_th || item.name || "";
+      const itemDesc = item.description_th || item.description || "";
+      const matchesSearch = itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        itemDesc.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [dbMenu, searchQuery, selectedCategory]);
 
   const renderRow = (item: any) => {
     const isLowStock = Number(item.quantity) <= Number(item.min_threshold);
@@ -1505,7 +1514,10 @@ function AdminInventoryView({
         /* Menu Items */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredMenuItems.map((item) => {
-            const isOutOfStock = outOfStockIds.includes(item.id);
+            const isOutOfStock = !item.is_available;
+            const itemName = item.name_th || item.name;
+            const itemImage = item.image_url || "";
+            const itemPrice = item.price || 0;
             return (
               <div 
                 key={item.id} 
@@ -1514,16 +1526,16 @@ function AdminInventoryView({
                 }`}
               >
                 <div className="h-16 w-16 rounded-2xl overflow-hidden bg-slate-100 shrink-0 relative">
-                  <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
+                  <img src={itemImage} alt={itemName} className="h-full w-full object-cover" />
                   {isOutOfStock && <span className="absolute inset-0 bg-red-600/10 text-red-600 font-bold text-[9px] flex items-center justify-center">หมด</span>}
                 </div>
                 <div className="flex-1 flex flex-col justify-between min-w-0">
                   <div>
                     <div className="flex justify-between items-center">
                       <span className="text-[9px] font-bold text-gray-400 uppercase">{item.category}</span>
-                      <span className="text-xs font-black text-[#002e47]">฿{item.price}</span>
+                      <span className="text-xs font-black text-[#002e47]">฿{itemPrice}</span>
                     </div>
-                    <h3 className="text-xs font-bold text-[#002e47] truncate">{item.name}</h3>
+                    <h3 className="text-xs font-bold text-[#002e47] truncate">{itemName}</h3>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                     <span className={`text-[10px] font-black ${isOutOfStock ? "text-red-500" : "text-emerald-600"}`}>
@@ -1537,7 +1549,7 @@ function AdminInventoryView({
                     >
                       <span
                         className={`absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${
-                          isOutOfStock ? "translate-x-4" : "translate-x-0"
+                          isOutOfStock ? "translate-x-0" : "translate-x-4"
                         }`}
                       />
                     </button>

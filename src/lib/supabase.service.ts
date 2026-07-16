@@ -443,3 +443,28 @@ export async function adjustStockFromOrder(
   }
 }
 
+
+// ─────────────────────────────────────────────────────────────
+// Store Settings
+// ─────────────────────────────────────────────────────────────
+
+export async function getNextQueueNumber(): Promise<number> {
+  try {
+    // get current
+    const { data } = await supabase.from("store_settings").select("value").eq("id", "takeaway_queue").single();
+    let current = 1;
+    if (data && data.value && data.value.counter) {
+      current = data.value.counter;
+    }
+    const nextQueue = current + 1;
+    await supabase.from("store_settings").upsert({ 
+      id: "takeaway_queue", 
+      value: { counter: nextQueue },
+      updated_at: new Date().toISOString()
+    });
+    return current;
+  } catch (err) {
+    console.error("Queue counter failed:", err);
+    return Date.now() % 1000;
+  }
+}

@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { type LiffProfile, liffLogout } from "../../lib/liff";
 import { supabase } from "../../lib/supabase";
-import { syncAuthUserToSupabase } from "../../lib/supabase.service";
+import { syncAuthUserToSupabase, getNextQueueNumber } from "../../lib/supabase.service";
 import { AnimatePresence, motion } from "motion/react";
 import { useLanguage, type Language } from "../../lib/i18n";
 import {
@@ -596,24 +596,12 @@ function LiffApp() {
         setOrderHistory(prev => {
           // Merge: keep local-only entries (hist_xxx) that aren't in Supabase yet
           const localOnly = prev.filter(p => p.id.startsWith("hist_"));
-          const combined = [...mapped, ...localOnly];
-          localStorage.setItem("ran-lung-get-orders", JSON.stringify(combined));
-          return combined;
+          return [...mapped, ...localOnly];
         });
       } catch (e) {
-        // fallback to localStorage
-        const saved = localStorage.getItem("ran-lung-get-orders");
-        if (saved) {
-          try { setOrderHistory(JSON.parse(saved)); } catch {}
-        }
+        console.error("Failed to load user orders:", e);
       }
     };
-
-    // Initial load from localStorage immediately for fast render
-    const saved = localStorage.getItem("ran-lung-get-orders");
-    if (saved) {
-      try { setOrderHistory(JSON.parse(saved)); } catch {}
-    }
 
     // Then fetch from Supabase
     fetchUserOrders();
@@ -903,7 +891,7 @@ function LiffApp() {
   const addToCart = (line: CartLine) => setCart((c) => [...c, line]);
   const removeLine = (id: string) => setCart((c) => c.filter((l) => l.id !== id));
 
-  const saveOrderToHistory = () => {
+  const saveOrderToHistory = async () => {
     if (cart.length === 0) return;
     const orderNum = `#AK-${Math.floor(2848 + Math.random() * 100)}`;
     const selectedTableObj = tables.find((t) => t.id === selectedTable);
@@ -912,15 +900,7 @@ function LiffApp() {
     // Calculate queue number for takeaway
     let takeawayQueueNum: string | undefined = undefined;
     if (orderType === "takeaway") {
-      const currentQueueCounter = localStorage.getItem("ran-lung-get-takeaway-queue-counter");
-      let nextQueue = 1;
-      if (currentQueueCounter) {
-        const parsed = parseInt(currentQueueCounter);
-        if (!isNaN(parsed)) {
-          nextQueue = parsed + 1;
-        }
-      }
-      localStorage.setItem("ran-lung-get-takeaway-queue-counter", String(nextQueue));
+      const nextQueue = await getNextQueueNumber();
       takeawayQueueNum = `Q-${String(nextQueue).padStart(2, "0")}`;
     }
 
@@ -939,7 +919,6 @@ function LiffApp() {
     };
     const updatedHistory = [newOrder, ...orderHistory];
     setOrderHistory(updatedHistory);
-    localStorage.setItem("ran-lung-get-orders", JSON.stringify(updatedHistory));
     setActiveOrderNumber(orderNum);
     setHasActiveOrder(true);
 
@@ -1199,8 +1178,8 @@ function LiffApp() {
               key="pay"
               total={subtotal + deliveryFee}
               onBack={() => setOverlay("orderConfirm")}
-              onSuccess={() => {
-                saveOrderToHistory();
+              onSuccess={async () => {
+                await saveOrderToHistory();
                 setShowSuccess(true);
                 setTimeout(() => {
                   setShowSuccess(false);
@@ -3742,11 +3721,6 @@ function StatusScreen({
             }
             return o;
           });
-          localStorage.setItem("ran-lung-get-orders", JSON.stringify(updated));
-          window.dispatchEvent(new StorageEvent("storage", {
-            key: "ran-lung-get-orders",
-            newValue: JSON.stringify(updated)
-          }));
         }
         // Also update Supabase if order has a DB ID (not hist_ prefix)
         if (activeOrder.id && !activeOrder.id.startsWith("hist_")) {
