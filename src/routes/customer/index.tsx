@@ -4154,6 +4154,26 @@ function MiniOrderTracker({
   const isReady     = status === "พร้อมเสิร์ฟ" || status === "delivering" || status === "พร้อมรับอาหาร" || status === "กำลังจัดส่ง";
   const isReceived  = !isCooking && !isReady && !isCompleted;
 
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    let timerId: any = null;
+    if (isCompleted) {
+      timerId = setTimeout(() => {
+        setIsVisible(false);
+      }, 10000);
+    } else {
+      setIsVisible(true);
+    }
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
+  }, [isCompleted]);
+
+  if (!isVisible) return null;
+
   const steps = orderType === "dine-in"
     ? [
       { id: 1, label: t("รับออเดอร์"),      icon: Check,        done: isCooking || isReady || isCompleted, active: isReceived },
