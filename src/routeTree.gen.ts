@@ -15,6 +15,7 @@ import { Route as StaffIndexRouteImport } from './routes/staff/index'
 import { Route as CustomerIndexRouteImport } from './routes/customer/index'
 import { Route as CaptainIndexRouteImport } from './routes/captain/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as ApiStripeWebhookRouteImport } from './routes/api/stripe-webhook'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -46,10 +47,16 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStripeWebhookRoute = ApiStripeWebhookRouteImport.update({
+  id: '/api/stripe-webhook',
+  path: '/api/stripe-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/stripe-webhook': typeof ApiStripeWebhookRoute
   '/admin/': typeof AdminIndexRoute
   '/captain/': typeof CaptainIndexRoute
   '/customer/': typeof CustomerIndexRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/stripe-webhook': typeof ApiStripeWebhookRoute
   '/admin': typeof AdminIndexRoute
   '/captain': typeof CaptainIndexRoute
   '/customer': typeof CustomerIndexRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/api/stripe-webhook': typeof ApiStripeWebhookRoute
   '/admin/': typeof AdminIndexRoute
   '/captain/': typeof CaptainIndexRoute
   '/customer/': typeof CustomerIndexRoute
@@ -74,13 +83,28 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/admin/' | '/captain/' | '/customer/' | '/staff/'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/api/stripe-webhook'
+    | '/admin/'
+    | '/captain/'
+    | '/customer/'
+    | '/staff/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/admin' | '/captain' | '/customer' | '/staff'
+  to:
+    | '/'
+    | '/login'
+    | '/api/stripe-webhook'
+    | '/admin'
+    | '/captain'
+    | '/customer'
+    | '/staff'
   id:
     | '__root__'
     | '/'
     | '/login'
+    | '/api/stripe-webhook'
     | '/admin/'
     | '/captain/'
     | '/customer/'
@@ -90,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
+  ApiStripeWebhookRoute: typeof ApiStripeWebhookRoute
   AdminIndexRoute: typeof AdminIndexRoute
   CaptainIndexRoute: typeof CaptainIndexRoute
   CustomerIndexRoute: typeof CustomerIndexRoute
@@ -140,12 +165,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/stripe-webhook': {
+      id: '/api/stripe-webhook'
+      path: '/api/stripe-webhook'
+      fullPath: '/api/stripe-webhook'
+      preLoaderRoute: typeof ApiStripeWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
+  ApiStripeWebhookRoute: ApiStripeWebhookRoute,
   AdminIndexRoute: AdminIndexRoute,
   CaptainIndexRoute: CaptainIndexRoute,
   CustomerIndexRoute: CustomerIndexRoute,
