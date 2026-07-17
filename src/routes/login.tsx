@@ -232,34 +232,84 @@ function LoginPage() {
   }
 
   // ── UI ───────────────────────────────────────────────────────
-  return (
-    <div
-      className="min-h-screen w-full flex items-center justify-center"
-      style={{
-        background: "radial-gradient(circle at 20% 20%, #0d2d42 0%, #050d15 65%, #020609 100%)",
-      }}
-    >
-      {/* Dot grid bg */}
-      <div
-        className="absolute inset-0 pointer-events-none"
+    return (
+    <div className="min-h-screen w-full flex bg-[#fff8f2] text-[#0f1f2b] overflow-hidden">
+      {/* Left side: Premium branding (Desktop only) */}
+      <div 
+        className="hidden md:flex md:w-[50%] lg:w-[55%] relative flex-col justify-between p-12 text-white overflow-hidden shrink-0"
         style={{
-          backgroundImage: "radial-gradient(circle, rgba(252,193,74,0.05) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
-        }}
-      />
-
-      {/* Frame */}
-      <div
-        className="relative flex flex-col overflow-hidden"
-        style={{
-          width: "min(430px, 100vw)",
-          minHeight: "min(932px, 100vh)",
-          borderRadius: 28,
-          background: LINEN,
-          boxShadow: "0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",
-          zIndex: 1,
+          background: `linear-gradient(135deg, ${BRAND} 0%, #050d15 100%)`,
         }}
       >
+        <div 
+          className="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-luminosity transition-all duration-700 hover:scale-105"
+          style={{
+            backgroundImage: "url('/thai_food_hero.jpg')",
+          }}
+        />
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: "linear-gradient(to bottom, rgba(0,46,71,0.4) 0%, rgba(5,13,21,0.85) 100%)",
+          }}
+        />
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(252,193,74,0.08) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+          }}
+        />
+
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl overflow-hidden border border-white/20 bg-white/10 backdrop-blur-md p-1.5 flex items-center justify-center">
+            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+          </div>
+          <span className="font-bold text-lg tracking-wider" style={{ fontFamily: "'Prompt', sans-serif" }}>
+            ร้านลุงเก้ต · LUNG GET
+          </span>
+        </div>
+
+        <div className="relative z-10 my-auto max-w-xl space-y-6">
+          <span className="inline-block px-3.5 py-1 rounded-full text-xs font-bold bg-[#fcc14a]/20 text-[#fcc14a] border border-[#fcc14a]/30 uppercase tracking-widest">
+            Epicurean Experience
+          </span>
+          <h2 className="text-4xl lg:text-5xl font-black leading-tight tracking-tight" style={{ fontFamily: "'Prompt', sans-serif" }}>
+            รสชาติต้นตำรับ <br/>
+            <span style={{ color: GOLD }}>ปรุงร้อนสดใหม่</span> ทุกจาน
+          </h2>
+          <p className="text-white/70 text-sm lg:text-base leading-relaxed">
+            สัมผัสประสบการณ์การสั่งอาหารที่สะดวกและรวดเร็วที่สุด ไม่ว่าจะรับประทานที่ร้าน สั่งกลับบ้าน หรือจัดส่งถึงบ้าน เราพร้อมเสิร์ฟรสชาติแห่งความสุขให้คุณถึงที่
+          </p>
+        </div>
+
+        <div className="relative z-10 flex justify-between text-xs text-white/50 border-t border-white/10 pt-6">
+          <span>© 2026 ร้านลุงเก้ต. All rights reserved.</span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            ครัวเปิดให้บริการปกติ (08:00 - 21:00)
+          </span>
+        </div>
+      </div>
+
+      {/* Right side: Login Form Container */}
+      <div className="w-full md:w-[50%] lg:w-[45%] flex flex-col justify-center items-center p-4 sm:p-8 relative overflow-y-auto no-scrollbar min-h-screen bg-[#fff8f2]">
+        <div
+          className="absolute inset-0 pointer-events-none md:hidden"
+          style={{
+            backgroundImage: "radial-gradient(circle, rgba(252,193,74,0.05) 1px, transparent 1px)",
+            backgroundSize: "32px 32px",
+            background: LINEN,
+          }}
+        />
+
+        {/* Frame */}
+        <div
+          className="relative flex flex-col overflow-hidden w-full min-h-screen md:min-h-0 md:max-w-[430px] md:rounded-[28px] md:shadow-[0_20px_50px_rgba(0,46,71,0.15)] md:border md:border-[#002e47]/5 md:overflow-y-auto no-scrollbar z-10"
+          style={{
+            background: LINEN,
+          }}
+        >
         {/* ── Hero ─────────────────────────────────────────── */}
         <div
           className="flex flex-col items-center"
@@ -841,9 +891,10 @@ function LoginPage() {
           @keyframes spin-btn { to { transform: rotate(360deg); } }
           @keyframes glow-border {
             0% { box-shadow: 0 0 5px rgba(252,193,74,0.5), 0 0 10px rgba(245,158,11,0.5), 0 0 15px rgba(234,88,12,0.5); }
-            100% { box-shadow: 0 0 10px rgba(252,193,74,1), 0 0 20px rgba(245,158,11,1), 0 0 30px rgba(234,88,12,1), 0 0 40px rgba(234,88,12,1); }
+                        100% { box-shadow: 0 0 10px rgba(252,193,74,1), 0 0 20px rgba(245,158,11,1), 0 0 30px rgba(234,88,12,1), 0 0 40px rgba(234,88,12,1); }
           }
         `}</style>
+      </div>
       </div>
     </div>
   );

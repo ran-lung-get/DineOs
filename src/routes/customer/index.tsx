@@ -1072,30 +1072,15 @@ function LiffApp() {
     );
   }
 
-  return (
+    return (
     <div
-      className="min-h-screen w-full flex items-center justify-center relative"
-      style={{
-        background:
-          "radial-gradient(circle at 20% 20%, #0d2d42 0%, #050d15 65%, #020609 100%)",
-      }}
+      className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-[var(--linen)]"
     >
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle, rgba(252,193,74,0.05) 1px, transparent 1px)",
-          backgroundSize: "32px 32px",
-        }}
-      />
       <main
         aria-label="แอปพลิเคชันสั่งอาหาร ร้านลุงเก็ต"
-        className="relative overflow-hidden bg-[var(--linen)] no-scrollbar z-10"
+        className="relative overflow-hidden bg-[var(--linen)] no-scrollbar z-10 w-full"
         style={{
-          width: "min(430px, 100vw)",
-          height: "min(932px, 100vh)",
-          borderRadius: 28,
-          boxShadow: "0 30px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04)",
+          height: "100dvh",
         }}
       >
         <div className="absolute inset-0 overflow-y-auto no-scrollbar">
@@ -1360,7 +1345,7 @@ function LiffApp() {
               exit={{ y: 40, opacity: 0 }}
               transition={{ type: "spring", damping: 20, stiffness: 300 }}
               className="absolute z-20"
-              style={{ left: 16, right: 16, bottom: 24, maxWidth: 430, marginLeft: "auto", marginRight: "auto" }}
+              style={{ left: 16, right: 16, bottom: 24, maxWidth: 600, marginLeft: "auto", marginRight: "auto" }}
             >
               <button
                 onClick={() => setCartDrawer(true)}
@@ -1384,11 +1369,11 @@ function LiffApp() {
           )}
         </AnimatePresence>
 
-        {tab === "status" && (
-          <div className="absolute bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm p-4">
+                {tab === "status" && (
+          <div className="absolute bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-sm p-4 flex justify-center">
             <button
               onClick={resetAll}
-              className="w-full h-12 rounded-full font-semibold"
+              className="w-full max-w-md h-12 rounded-full font-semibold"
               style={{ background: BRAND, color: "white" }}
             >
               กลับไปยังหน้าหลัก
@@ -1725,8 +1710,8 @@ function HomeScreen({
 
   return (
     <div className="pb-36" style={{ background: LINEN }}>
-      {/* Hero */}
-      <div className="relative h-72 w-full overflow-hidden">
+            {/* Hero */}
+      <div className="relative h-72 md:h-96 w-full overflow-hidden">
         <img src={HERO_IMG} alt="restaurant" className="absolute inset-0 h-full w-full object-cover" />
         <div
           className="absolute inset-0"
@@ -1735,8 +1720,10 @@ function HomeScreen({
               "linear-gradient(180deg, rgba(0,18,30,0.55) 0%, rgba(0,18,30,0.25) 40%, rgba(0,18,30,0.85) 100%)",
           }}
         />
-        <button
-          aria-label="เปิดเมนูด้านข้าง"
+        <div className="absolute inset-0 max-w-7xl mx-auto w-full h-full px-5 md:px-12 pointer-events-none">
+          <div className="relative w-full h-full pointer-events-auto">
+            <button
+              aria-label="เปิดเมนูด้านข้าง"
           onClick={onOpenSidebar}
           className="absolute top-5 left-5 grid h-10 w-10 place-items-center rounded-full bg-white/15 backdrop-blur-md text-white border border-white/20"
         >
@@ -1851,7 +1838,7 @@ function HomeScreen({
                 </span>
               )}
             </div>
-            <button
+                        <button
               aria-label="สั่งอาหาร"
               onClick={() => {
                 if (!orderType) {
@@ -1877,9 +1864,11 @@ function HomeScreen({
             </button>
           </div>
         </div>
+        </div>
+        </div>
       </div>
 
-      {/* Mini order status tracker */}
+            {/* Mini order status tracker */}
       <AnimatePresence>
         {hasActiveOrder && (
           <motion.div
@@ -1887,7 +1876,7 @@ function HomeScreen({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
             transition={{ type: "spring", damping: 20, stiffness: 260 }}
-            className="px-5 mt-4"
+            className="px-5 md:px-12 mt-4 max-w-7xl mx-auto w-full"
           >
             <MiniOrderTracker
               orderNumber={activeOrderNumber}
@@ -1899,8 +1888,8 @@ function HomeScreen({
         )}
       </AnimatePresence>
 
-      {/* Order type tiles */}
-      <div ref={orderTypeRef} className="px-5 mt-4">
+            {/* Order type tiles */}
+      <div ref={orderTypeRef} className="px-5 md:px-12 mt-4 max-w-7xl mx-auto w-full">
         <h3 className="text-sm font-medium mb-3 flex flex-wrap items-center gap-x-1.5" style={{ color: BRAND }}>
           <span>{t("ช่องทางการรับอาหาร")} <span className="text-red-500">*</span></span>
           {orderType === null && (
@@ -1975,9 +1964,9 @@ function HomeScreen({
         </div>
       </div>
 
-      {/* Conditional input for order type */}
+            {/* Conditional input for order type */}
       {orderType !== null && (
-        <div className="px-5 mt-6">
+        <div className="px-5 md:px-12 mt-6 max-w-7xl mx-auto w-full">
           <AnimatePresence mode="wait">
             <motion.div
               key={orderType}
@@ -2019,8 +2008,8 @@ function HomeScreen({
         </div>
       )}
 
-      {/* Menu list (horizontal slider) */}
-      <div className="px-5 mt-6">
+            {/* Menu list (horizontal slider) */}
+      <div className="px-5 md:px-12 mt-6 max-w-7xl mx-auto w-full">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold" style={{ color: BRAND }}>
             {t("เมนูแนะนำ")}
@@ -2493,7 +2482,7 @@ function ItemModal({
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 30, stiffness: 280 }}
-        className="absolute inset-x-0 bottom-0 top-12 z-50 bg-white rounded-t-3xl overflow-hidden flex flex-col"
+                className="absolute inset-x-0 bottom-0 top-12 md:top-24 md:bottom-24 md:max-w-xl md:mx-auto md:rounded-3xl md:shadow-2xl z-50 bg-white overflow-hidden flex flex-col"
       >
         <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "#f1ece4" }}>
           <div className="flex items-start justify-between gap-4">
@@ -2846,15 +2835,16 @@ function MenuOverlay({
 
 
   return (
-    <motion.div
+        <motion.div
       initial={{ x: "100%" }}
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ type: "tween", duration: 0.3 }}
       className="absolute inset-0 z-30 bg-[var(--linen)] flex flex-col"
     >
-      <div className="z-20 bg-[var(--linen)] border-b border-slate-200/80 px-5 pt-5 pb-4 backdrop-blur-sm">
-        <div className="flex items-center justify-between gap-3">
+      <div className="z-20 bg-[var(--linen)] border-b border-slate-200/80 pt-5 pb-4 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto px-5 w-full">
+          <div className="flex items-center justify-between gap-3">
           <button
             onClick={onBack}
             className="grid h-10 w-10 place-items-center rounded-full bg-white"
@@ -2936,16 +2926,18 @@ function MenuOverlay({
                     style={{ background: BRAND }}
                   />
                 )}
-                <span className="relative">{t(cat.label)}</span>
+                                <span className="relative">{t(cat.label)}</span>
               </button>
             );
           })}
         </div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar px-5 pt-5 pb-32">
-        <div className="mt-5 space-y-3">
-          {filteredAndSortedItems.length === 0 ? (
+            <div className="flex-1 overflow-y-auto no-scrollbar w-full">
+        <div className="max-w-7xl mx-auto px-5 pt-5 pb-32">
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 space-y-0">
+            {filteredAndSortedItems.length === 0 ? (
             <div className="text-center py-16 flex flex-col items-center justify-center">
               <Search size={32} className="text-slate-300 mb-2" />
               <p className="text-sm font-semibold text-slate-500">ไม่พบเมนูที่คุณค้นหา</p>
@@ -2981,11 +2973,12 @@ function MenuOverlay({
                         </button>
                       </div>
                     </div>
-                  </div>
+                                    </div>
                 </div>
               </div>
             ))
           )}
+        </div>
         </div>
       </div>
 
@@ -2997,8 +2990,7 @@ function MenuOverlay({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
             transition={{ type: "spring", damping: 20, stiffness: 300 }}
-            className="absolute z-40"
-            style={{ left: 16, right: 16, bottom: 24 }}
+            className="absolute z-40 w-[calc(100%-32px)] md:max-w-md md:left-1/2 md:-translate-x-1/2 bottom-6 left-4"
           >
             <button
               onClick={onOpenCart}
@@ -3136,7 +3128,7 @@ function CartDrawer({
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 30, stiffness: 280 }}
-        className="absolute inset-x-0 bottom-0 z-50 bg-white rounded-t-3xl max-h-[85%] flex flex-col"
+                className="absolute inset-x-0 bottom-0 md:left-auto md:right-4 md:bottom-4 md:max-w-md md:w-full md:rounded-3xl md:shadow-2xl z-50 bg-white rounded-t-3xl max-h-[85%] flex flex-col"
       >
         <div className="px-5 pt-3 pb-4 border-b" style={{ borderColor: "#f1ece4" }}>
           <div className="mx-auto h-1.5 w-12 rounded-full bg-[#e5dccc] mb-3" />
@@ -3239,28 +3231,30 @@ function OrderConfirmOverlay({
   const [err, setErr] = useState("");
   const grand = subtotal + deliveryFee;
 
-  return (
+    return (
     <motion.div
       initial={{ x: "100%" }}
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ type: "tween", duration: 0.3 }}
-      className="absolute inset-0 z-40 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-32"
+      className="absolute inset-0 z-40 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-12"
     >
-      <div className="px-5 pt-5 pb-6" style={{ background: BRAND, color: "white" }}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
-          >
-            <ChevronLeft size={20} color={GOLD} />
-          </button>
-          <h1 className="text-lg font-bold">รายการสั่งซื้อในตะกร้า</h1>
+      <div className="w-full" style={{ background: BRAND, color: "white" }}>
+        <div className="max-w-2xl mx-auto px-5 pt-5 pb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
+            >
+              <ChevronLeft size={20} color={GOLD} />
+            </button>
+            <h1 className="text-lg font-bold">รายการสั่งซื้อในตะกร้า</h1>
+          </div>
+          <p className="text-sm mt-2 text-white/70">ตรวจสอบรายการก่อนชำระเงิน</p>
         </div>
-        <p className="text-sm mt-2 text-white/70">ตรวจสอบรายการก่อนชำระเงิน</p>
       </div>
 
-      <div className="px-5 mt-4 space-y-3">
+      <div className="max-w-2xl mx-auto px-5 mt-4 space-y-3">
         {cart.map((l) => (
           <div key={l.id} className="bg-white rounded-2xl p-4 shadow-soft">
             <div className="flex gap-3">
@@ -3323,7 +3317,7 @@ function OrderConfirmOverlay({
           <label className="text-sm font-semibold flex items-center gap-2" style={{ color: BRAND }}>
             <Phone size={14} /> เบอร์โทรสำหรับติดต่อ
           </label>
-          <input
+                    <input
             type="tel"
             value={phone}
             onChange={(e) => {
@@ -3335,26 +3329,26 @@ function OrderConfirmOverlay({
             style={{ borderColor: err ? "#ef4444" : "#ece4d6", color: BRAND }}
           />
           {err && <p className="text-xs text-red-500 mt-1">{err}</p>}
+          
+          <div className="pb-8 mt-4">
+            <button
+              onClick={() => {
+                if (phone.length < 10) {
+                  setErr("กรุณากรอกเบอร์โทรให้ครบ 10 หลัก");
+                  return;
+                }
+                onProceed();
+              }}
+              className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+              style={{
+                background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
+              }}
+            >
+              <CreditCard size={18} />
+              <span>ชำระผ่าน Stripe · ฿{grand.toLocaleString()}</span>
+            </button>
+          </div>
         </div>
-      </div>
-
-      <div className="px-5 pb-8 mt-4">
-        <button
-          onClick={() => {
-            if (phone.length < 10) {
-              setErr("กรุณากรอกเบอร์โทรให้ครบ 10 หลัก");
-              return;
-            }
-            onProceed();
-          }}
-          className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
-          style={{
-            background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
-          }}
-        >
-          <CreditCard size={18} />
-          <span>ชำระผ่าน Stripe · ฿{grand.toLocaleString()}</span>
-        </button>
       </div>
     </motion.div>
   );
@@ -3442,27 +3436,29 @@ function PaymentOverlay({
   };
 
   return (
-    <motion.div
+        <motion.div
       initial={{ x: "100%" }}
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
       transition={{ type: "tween", duration: 0.3 }}
-      className="absolute inset-0 z-50 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-32"
+      className="absolute inset-0 z-50 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-12"
     >
       {/* Header */}
-      <div className="px-5 pt-5 pb-6 mb-6" style={{ background: BRAND, color: "white" }}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15 cursor-pointer"
-          >
-            <ChevronLeft size={20} color={GOLD} />
-          </button>
-          <h1 className="text-lg font-bold">ชำระเงินค่าอาหาร</h1>
+      <div className="w-full" style={{ background: BRAND, color: "white" }}>
+        <div className="max-w-2xl mx-auto px-5 pt-5 pb-6 mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15 cursor-pointer"
+            >
+              <ChevronLeft size={20} color={GOLD} />
+            </button>
+            <h1 className="text-lg font-bold">ชำระเงินค่าอาหาร</h1>
+          </div>
         </div>
       </div>
 
-      <div className="px-5 space-y-4">
+      <div className="max-w-2xl mx-auto px-5 space-y-4">
         {/* Stripe Content */}
         <div className="bg-white rounded-3xl p-5 shadow-soft border border-slate-50 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -3826,10 +3822,11 @@ function StatusScreen({
     setErrorText("");
   };
 
-  return (
-    <div className="min-h-full pb-28 relative" style={{ background: SURFACE }}>
-      {/* Reassurance Banner */}
-      {currentStatus === "ขอคืนเงิน" && (
+    return (
+    <div className="min-h-full pb-28 relative w-full" style={{ background: SURFACE }}>
+      <div className="max-w-2xl mx-auto w-full">
+        {/* Reassurance Banner */}
+        {currentStatus === "ขอคืนเงิน" && (
         <div className="mx-5 mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-200 flex flex-col gap-1.5 shadow-sm">
           <div className="flex items-center gap-2 text-amber-800 font-bold text-sm">
             <span className="animate-pulse">●</span>
@@ -4020,6 +4017,7 @@ function StatusScreen({
         </div>
       </div>
 
+            </div>
       {/* Cancellation Dialog Overlay */}
       <AnimatePresence>
         {showCancelDialog && (
@@ -4334,7 +4332,7 @@ function HistoryOverlay({
   onBack: () => void;
 }) {
   return (
-    <motion.div
+        <motion.div
       initial={{ x: "100%" }}
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
@@ -4342,23 +4340,26 @@ function HistoryOverlay({
       className="absolute inset-0 z-30 bg-[var(--surface)] flex flex-col"
     >
       {/* Header */}
-      <div className="px-5 pt-5 pb-4" style={{ background: BRAND, color: "white" }}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
-          >
-            <ChevronLeft size={20} color={GOLD} />
-          </button>
-          <div>
-            <h1 className="text-lg font-bold">ประวัติการสั่งซื้อ</h1>
-            <p className="text-xs text-white/60">{orderHistory.length} รายการ</p>
+      <div className="w-full" style={{ background: BRAND, color: "white" }}>
+        <div className="max-w-2xl mx-auto px-5 pt-5 pb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
+            >
+              <ChevronLeft size={20} color={GOLD} />
+            </button>
+            <div>
+              <h1 className="text-lg font-bold">ประวัติการสั่งซื้อ</h1>
+              <p className="text-xs text-white/60">{orderHistory.length} รายการ</p>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto no-scrollbar px-5 pt-5 pb-8 space-y-4">
+      <div className="flex-1 overflow-y-auto no-scrollbar w-full">
+        <div className="max-w-2xl mx-auto px-5 pt-5 pb-8 space-y-4">
         {orderHistory.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Package size={48} className="mb-4" style={{ color: INK_MUTED }} />
@@ -4468,7 +4469,8 @@ function HistoryOverlay({
               </div>
             </motion.div>
           ))
-        )}
+                )}
+      </div>
       </div>
     </motion.div>
   );
@@ -4506,7 +4508,7 @@ function ContactOverlay({ onBack }: { onBack: () => void }) {
   ];
 
   return (
-    <motion.div
+        <motion.div
       initial={{ x: "100%" }}
       animate={{ x: 0 }}
       exit={{ x: "100%" }}
@@ -4514,20 +4516,23 @@ function ContactOverlay({ onBack }: { onBack: () => void }) {
       className="absolute inset-0 z-30 bg-[var(--surface)] flex flex-col"
     >
       {/* Header */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between" style={{ background: BRAND, color: "white" }}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
-          >
-            <ChevronLeft size={20} color={GOLD} />
-          </button>
-          <h1 className="text-lg font-bold">ข้อมูลร้านค้า</h1>
+      <div className="w-full" style={{ background: BRAND, color: "white" }}>
+        <div className="max-w-2xl mx-auto px-5 pt-5 pb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
+            >
+              <ChevronLeft size={20} color={GOLD} />
+            </button>
+            <h1 className="text-lg font-bold">ข้อมูลร้านค้า</h1>
+          </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
+      <div className="flex-1 overflow-y-auto no-scrollbar w-full pb-10">
+        <div className="max-w-2xl mx-auto px-5">
 
         {/* Google Maps Container */}
         <div className="relative h-64 w-full bg-slate-200 overflow-hidden">
@@ -4693,9 +4698,10 @@ function ContactOverlay({ onBack }: { onBack: () => void }) {
                   {r.text}
                 </p>
               </div>
-            ))}
+                        ))}
           </div>
 
+        </div>
         </div>
 
       </div>
@@ -4731,26 +4737,29 @@ function StoreClosedOverlay({
   ];
 
   return (
-    <motion.div
+        <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="absolute inset-0 z-50 bg-[var(--surface)] flex flex-col"
     >
       {/* Header */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between shadow-sm" style={{ background: BRAND, color: "white" }}>
-        <button
-          onClick={onOpenSidebar}
-          className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15 active:scale-95 transition-transform"
-        >
-          <Menu size={20} color={GOLD} />
-        </button>
-        <span className="text-xs uppercase tracking-[0.25em] text-white/60 font-bold">EPICUREAN</span>
-        <div className="w-10" />
+      <div className="w-full shadow-sm" style={{ background: BRAND, color: "white" }}>
+        <div className="max-w-2xl mx-auto px-5 pt-5 pb-4 flex items-center justify-between">
+          <button
+            onClick={onOpenSidebar}
+            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15 active:scale-95 transition-transform"
+          >
+            <Menu size={20} color={GOLD} />
+          </button>
+          <span className="text-xs uppercase tracking-[0.25em] text-white/60 font-bold">EPICUREAN</span>
+          <div className="w-10" />
+        </div>
       </div>
 
       {/* Main Banner */}
-      <div className="flex-1 overflow-y-auto no-scrollbar px-6 py-6 flex flex-col justify-between">
+      <div className="flex-1 overflow-y-auto no-scrollbar w-full">
+        <div className="max-w-2xl mx-auto px-6 py-6 flex flex-col justify-between h-full min-h-[calc(100vh-80px)]">
         <div className="space-y-6">
           {/* Pulsing closed icon */}
           <div className="flex justify-center mt-2">
@@ -4818,11 +4827,12 @@ function StoreClosedOverlay({
             onClick={onBypass}
             className="w-full py-4 px-5 rounded-2xl text-xs font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 bg-slate-50 border border-slate-200/80 transition-all text-center flex items-center justify-center gap-2 active:scale-[0.98]"
           >
-            เข้าสู่หน้าร้าน (โหมดสาธิตสำหรับทดสอบ)
+                        เข้าสู่หน้าร้าน (โหมดสาธิตสำหรับทดสอบ)
           </button>
           <p className="text-[10px] text-slate-400 text-center">
-            * ปุ่มด้านบนสำหรับผู้ตรวจสอบเพื่อทดสอบการใช้งานในวันหยุด/นอกเวลา
+            * ปุ่มด้านบนสำหรับผู้ตรวจสอบเพื่อทดสอบการใช้งาน in วันหยุด/นอกเวลา
           </p>
+        </div>
         </div>
       </div>
     </motion.div>
@@ -4870,7 +4880,7 @@ function Sidebar({
         animate={{ x: 0 }}
         exit={{ x: "-100%" }}
         transition={{ type: "tween", duration: 0.28 }}
-        className="absolute top-0 left-0 bottom-0 w-[78%] z-[70] flex flex-col"
+                className="absolute top-0 left-0 bottom-0 w-[78%] md:w-[320px] z-[70] flex flex-col"
         style={{ background: BRAND, color: "white" }}
       >
         <div className="p-5 border-b border-white/10">
