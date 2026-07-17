@@ -2,13 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { supabase } from "../../lib/supabase";
-import {
-  getIngredients,
-  updateIngredientStock,
-  addIngredient,
-  deleteIngredient,
+import { 
+  getIngredients, 
+  updateIngredientStock, 
+  addIngredient, 
+  deleteIngredient 
 } from "../../lib/supabase.service";
-import { MENU, type MenuItem } from "../customer/index";
+
 import {
   ResponsiveContainer,
   AreaChart,
@@ -16,7 +16,7 @@ import {
   XAxis,
   YAxis,
   Tooltip as ChartTooltip,
-  CartesianGrid,
+  CartesianGrid
 } from "recharts";
 import {
   ChefHat,
@@ -42,7 +42,7 @@ import {
   UserCheck,
   Flame,
   Search,
-  UserPlus,
+  UserPlus
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin/")({
@@ -86,15 +86,14 @@ function AdminDashboard() {
   // Inventory state
   const [ingredients, setIngredients] = useState<any[]>([]);
   const [loadingIngredients, setLoadingIngredients] = useState(false);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [loadingMenuItems, setLoadingMenuItems] = useState(false);
   const [activeSubView, setActiveSubView] = useState<"menu" | "ingredients">("menu");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [showAddForm, setShowAddForm] = useState(false);
-  const [outOfStockIds, setOutOfStockIds] = useState<string[]>([]);
+  const [dbMenu, setDbMenu] = useState<any[]>([]);
+  const [loadingMenu, setLoadingMenu] = useState(false);
 
-  // Add ingredient form states
+  // New ingredient form states
   const [newIngName, setNewIngName] = useState("");
   const [newIngQty, setNewIngQty] = useState("");
   const [newIngUnit, setNewIngUnit] = useState("g");
@@ -115,14 +114,12 @@ function AdminDashboard() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           window.location.href = "/login";
           return;
         }
-
+        
         // Fetch role from users table
         const { data, error } = await supabase
           .from("users")
@@ -161,15 +158,13 @@ function AdminDashboard() {
     try {
       const { data: dbOrders, error } = await supabase
         .from("orders")
-        .select(
-          `
+        .select(`
           *,
           customers (
             display_name
           ),
           order_items (*)
-        `,
-        )
+        `)
         .order("created_at", { ascending: false });
 
       if (!error && dbOrders) {
@@ -184,21 +179,11 @@ function AdminDashboard() {
           return {
             id: o.id,
             orderNumber: o.order_number,
-            date:
-              new Date(o.created_at).toLocaleDateString("th-TH", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              }) +
-              " · " +
-              new Date(o.created_at).toLocaleTimeString("th-TH", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
+            date: new Date(o.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) + " · " + new Date(o.created_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
             items: (o.order_items || []).map((item: any) => ({
               name: item.name,
               qty: item.quantity,
-              price: Number(item.unit_price),
+              price: Number(item.unit_price)
             })),
             subtotal: Number(o.subtotal),
             delivery: Number(o.delivery_fee),
@@ -209,7 +194,7 @@ function AdminDashboard() {
             tableNumber: o.table_number || "",
             queueNumber: o.queue_number || "",
             note: o.special_instructions || "",
-            created_at: o.created_at,
+            created_at: o.created_at
           };
         });
         setOrders(mapped);
@@ -221,49 +206,39 @@ function AdminDashboard() {
     }
   };
 
-  // 3. Fetch Ingredients (for Stock view) — always reads directly from Supabase
+  // 3. Fetch Ingredients (for Stock view)
   const fetchIngredients = async () => {
     setLoadingIngredients(true);
     try {
       const data = await getIngredients();
-      setIngredients(data ?? []);
+      if (data && data.length > 0) {
+        setIngredients(data);
+      } else {
+        setIngredients([]);
+      }
     } catch (err) {
       console.error("Load stock error:", err);
+      setIngredients([]);
     } finally {
       setLoadingIngredients(false);
     }
   };
 
-  const fetchMenuItems = async () => {
-    setLoadingMenuItems(true);
+  // 3.5 Fetch Menu Items
+  const fetchMenu = async () => {
+    setLoadingMenu(true);
     try {
       const { data, error } = await supabase
         .from("menu_items")
         .select("*")
         .order("sort_order", { ascending: true });
-
       if (!error && data) {
-        const mapped = data.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          desc: item.description || "",
-          price: Number(item.price),
-          image: item.image_url || item.image || "",
-          category: item.category || "signature",
-          isAvailable: item.is_available ?? true,
-          isSpicy: item.is_spicy ?? false,
-          options: item.options || undefined,
-          addons: item.addons || undefined,
-        }));
-        setMenuItems(mapped);
-      } else {
-        setMenuItems([]);
+        setDbMenu(data);
       }
-    } catch (err) {
-      console.error("Load menu items error:", err);
-      setMenuItems([]);
+    } catch (e) {
+      console.error("Failed to load menu items:", e);
     } finally {
-      setLoadingMenuItems(false);
+      setLoadingMenu(false);
     }
   };
 
@@ -281,30 +256,9 @@ function AdminDashboard() {
       } else {
         // Mock fallback if DB schema doesn't match or fails
         const mockUsers = [
-          {
-            id: "u-1",
-            display_name: "แอดมินลุงเกตุ",
-            email: "admin@lungget.com",
-            role: "admin",
-            is_active: true,
-            picture_url: null,
-          },
-          {
-            id: "u-2",
-            display_name: "สมศรี แม่ครัว",
-            email: "cook@lungget.com",
-            role: "staff",
-            is_active: true,
-            picture_url: null,
-          },
-          {
-            id: "u-3",
-            display_name: "นายสมชาย (ลูกค้า)",
-            email: "somchai@gmail.com",
-            role: "customer",
-            is_active: true,
-            picture_url: null,
-          },
+          { id: "u-1", display_name: "แอดมินลุงเกตุ", email: "admin@lungget.com", role: "admin", is_active: true, picture_url: null },
+          { id: "u-2", display_name: "สมศรี แม่ครัว", email: "cook@lungget.com", role: "staff", is_active: true, picture_url: null },
+          { id: "u-3", display_name: "นายสมชาย (ลูกค้า)", email: "somchai@gmail.com", role: "customer", is_active: true, picture_url: null },
         ];
         setUsers(mockUsers);
       }
@@ -322,27 +276,39 @@ function AdminDashboard() {
       fetchSupabaseOrders();
     } else if (view === "inventory") {
       fetchIngredients();
-      fetchMenuItems();
-      const savedOutOfStock = localStorage.getItem("ran-lung-get-out-of-stock-items");
-      if (savedOutOfStock) {
-        try {
-          setOutOfStockIds(JSON.parse(savedOutOfStock));
-        } catch {}
-      }
+      fetchMenu();
     } else if (view === "staff" || view === "approvals") {
       fetchUsers();
     }
   }, [view, checkingAuth]);
 
+  // Realtime subscriptions for inventory and menu
+  useEffect(() => {
+    const invCh = supabase
+      .channel('admin-inventory-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ingredients' }, () => {
+        if (view === "inventory") fetchIngredients();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => {
+        if (view === "inventory") fetchMenu();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(invCh); };
+  }, [view]);
+
   // Realtime subscription for users table
   useEffect(() => {
     fetchUsers(); // Fetch initially so badge is accurate on load regardless of view
-
+    
     const channel = supabase
-      .channel("admin-users-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
-        fetchUsers();
-      })
+      .channel('admin-users-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'users' },
+        () => {
+          fetchUsers();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -359,9 +325,12 @@ function AdminDashboard() {
   // Role modification handlers
   const updateUserRole = async (userId: string, newRole: "admin" | "staff" | "customer") => {
     // Optimistic UI update
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
     try {
-      const { error } = await supabase.from("users").update({ role: newRole }).eq("id", userId);
+      const { error } = await supabase
+        .from("users")
+        .update({ role: newRole })
+        .eq("id", userId);
       if (error) throw error;
     } catch (err) {
       console.warn("Supabase role update failed, keeping optimistic local edit:", err);
@@ -370,7 +339,7 @@ function AdminDashboard() {
 
   const toggleUserActiveStatus = async (userId: string, currentStatus: boolean) => {
     const nextStatus = !currentStatus;
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: nextStatus } : u)));
+    setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_active: nextStatus } : u));
     try {
       const { error } = await supabase
         .from("users")
@@ -385,53 +354,47 @@ function AdminDashboard() {
   const deleteUser = async (userId: string, displayName: string) => {
     if (!confirm(`คุณต้องการลบผู้ใช้งาน "${displayName}" ใช่หรือไม่?`)) return;
     const previousUsers = [...users];
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setUsers(prev => prev.filter(u => u.id !== userId));
     try {
-      const { error } = await supabase.from("users").delete().eq("id", userId);
+      const { error } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", userId);
       if (error) throw error;
     } catch (err: any) {
       console.error("Supabase user deletion failed, rolling back:", err);
-      alert(
-        `ไม่สามารถลบผู้ใช้ได้: ${err?.message || "กรุณาตรวจสอบว่าผู้ใช้นี้มีประวัติคำสั่งซื้ออยู่หรือไม่"}`,
-      );
+      alert(`ไม่สามารถลบผู้ใช้ได้: ${err?.message || "กรุณาตรวจสอบว่าผู้ใช้นี้มีประวัติคำสั่งซื้ออยู่หรือไม่"}`);
       setUsers(previousUsers);
     }
   };
 
   // Inventory logic copy from staff
-  const toggleStock = (itemId: string) => {
-    let updated: string[];
-    if (outOfStockIds.includes(itemId)) {
-      updated = outOfStockIds.filter((id) => id !== itemId);
-    } else {
-      updated = [...outOfStockIds, itemId];
+  const toggleStock = async (itemId: string) => {
+    const item = dbMenu.find(m => m.id === itemId);
+    if (!item) return;
+    const nextAvailability = !item.is_available;
+    
+    setDbMenu(prev => prev.map(m => m.id === itemId ? { ...m, is_available: nextAvailability } : m));
+    
+    try {
+      await supabase.from("menu_items").update({ is_available: nextAvailability }).eq("id", itemId);
+    } catch {
+      console.warn("Failed to update stock status in Supabase.");
     }
-    setOutOfStockIds(updated);
-    localStorage.setItem("ran-lung-get-out-of-stock-items", JSON.stringify(updated));
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key: "ran-lung-get-out-of-stock-items",
-        newValue: JSON.stringify(updated),
-      }),
-    );
   };
 
   const adjustIngredientQty = async (id: string, amount: number) => {
-    const item = ingredients.find((i) => i.id === id);
+    const item = ingredients.find(i => i.id === id);
     if (!item) return;
     const newQty = Math.max(0, Number(item.quantity) + amount);
 
-    // Optimistic update for instant UI feedback
-    setIngredients((prev) => prev.map((i) => (i.id === id ? { ...i, quantity: newQty } : i)));
+    const updated = ingredients.map(i => i.id === id ? { ...i, quantity: newQty } : i);
+    setIngredients(updated);
 
     try {
-      await updateIngredientStock(id, newQty);
+      await updateIngredientStock(id, { quantity: newQty });
     } catch {
-      console.warn("Supabase stock update failed — reverting.");
-      // Revert optimistic update on failure
-      setIngredients((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, quantity: item.quantity } : i)),
-      );
+      console.warn("Supabase stock update failed.");
     }
   };
 
@@ -444,18 +407,22 @@ function AdminDashboard() {
       return;
     }
 
-    setNewIngName("");
-    setNewIngQty("");
-    setNewIngThreshold("");
-    setShowAddForm(false);
+    const newItem = {
+      name: newIngName.trim(),
+      quantity: q,
+      unit: newIngUnit,
+      min_threshold: t,
+    };
 
     try {
-      await addIngredient(newIngName.trim(), q, newIngUnit, t);
-      // Re-fetch from DB so the real row (with the real UUID) is shown
-      await fetchIngredients();
-    } catch (err) {
-      console.error("เพิ่มวัตถุดิบไม่สำเร็จ:", err);
-      alert("ไม่สามารถเพิ่มวัตถุดิบได้ กรุณาลองใหม่");
+      const added = await addIngredient(newItem);
+      setIngredients(prev => [added, ...prev]);
+      setNewIngName("");
+      setNewIngQty("");
+      setNewIngThreshold("");
+      setShowAddForm(false);
+    } catch {
+      console.warn("Supabase insert failed.");
     }
   };
 
@@ -467,37 +434,23 @@ function AdminDashboard() {
       return;
     }
 
-    // Optimistic update
-    setIngredients((prev) =>
-      prev.map((i) =>
-        i.id === id
-          ? {
-              ...i,
-              name: editName.trim(),
-              quantity: q,
-              unit: editUnit,
-              min_threshold: t,
-            }
-          : i,
-      ),
-    );
-    setEditingId(null);
-
     try {
-      await updateIngredientStock(id, q, editName.trim(), editUnit, t);
-      // Re-fetch to confirm DB state
-      await fetchIngredients();
-    } catch (err) {
-      console.error("Supabase edit update failed:", err);
-      alert("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
-      // Revert by re-fetching
-      await fetchIngredients();
+      const updated = await updateIngredientStock(id, {
+        name: editName.trim(),
+        quantity: q,
+        unit: editUnit,
+        min_threshold: t
+      });
+      setIngredients(prev => prev.map(i => i.id === id ? updated : i));
+      setEditingId(null);
+    } catch {
+      console.warn("Supabase edit update failed.");
     }
   };
 
   const handleRemoveIngredient = async (id: string, name: string) => {
     if (!confirm(`คุณต้องการลบวัตถุดิบ "${name}" ใช่หรือไม่?`)) return;
-    setIngredients((prev) => prev.filter((i) => i.id !== id));
+    setIngredients(prev => prev.filter(i => i.id !== id));
     try {
       await deleteIngredient(id);
     } catch {
@@ -514,20 +467,13 @@ function AdminDashboard() {
   };
 
   const groupedIngredients = useMemo(() => {
-    const meat = ingredients.filter(
-      (i) => i.name.includes("หมู") || i.name.includes("ไก่") || i.name === "เนื้อ",
-    );
-    const seafood = ingredients.filter(
-      (i) => i.name.includes("หมึก") || i.name.includes("กุ้ง") || i.name.includes("หอย"),
-    );
-    const toppings = ingredients.filter(
-      (i) => i.name.includes("ไข่") || i.name.includes("ไส้กรอก") || i.name.includes("กุนเชียง"),
-    );
-    const others = ingredients.filter(
-      (i) =>
-        !meat.some((m) => m.id === i.id) &&
-        !seafood.some((s) => s.id === i.id) &&
-        !toppings.some((t) => t.id === i.id),
+    const meat = ingredients.filter(i => i.name.includes("หมู") || i.name.includes("ไก่") || i.name === "เนื้อ");
+    const seafood = ingredients.filter(i => i.name.includes("หมึก") || i.name.includes("กุ้ง") || i.name.includes("หอย"));
+    const toppings = ingredients.filter(i => i.name.includes("ไข่") || i.name.includes("ไส้กรอก") || i.name.includes("กุนเชียง"));
+    const others = ingredients.filter(i =>
+      !meat.some(m => m.id === i.id) &&
+      !seafood.some(s => s.id === i.id) &&
+      !toppings.some(t => t.id === i.id)
     );
     return { meat, seafood, toppings, others };
   }, [ingredients]);
@@ -545,10 +491,11 @@ function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#fff8f2] text-gray-900 flex flex-col md:flex-row font-sans">
+      
       {/* ── Mobile Sidebar Header ── */}
       <header className="md:hidden bg-[#002e47] text-white p-4 flex items-center justify-between shadow-md sticky top-0 z-30">
         <div className="flex items-center gap-2">
-          <button
+          <button 
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 transition"
           >
@@ -556,7 +503,10 @@ function AdminDashboard() {
           </button>
           <span className="font-black text-sm tracking-wide">หลังบ้านผู้ดูแลระบบ (Admin)</span>
         </div>
-        <button onClick={handleLogout} className="text-red-300 font-bold text-xs">
+        <button 
+          onClick={handleLogout}
+          className="text-red-300 font-bold text-xs"
+        >
           ออก
         </button>
       </header>
@@ -565,7 +515,7 @@ function AdminDashboard() {
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            <motion.div
+            <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -579,13 +529,7 @@ function AdminDashboard() {
               transition={{ type: "tween", duration: 0.2 }}
               className="fixed top-0 left-0 bottom-0 w-64 bg-[#002e47] text-white z-50 flex flex-col p-5 shadow-2xl"
             >
-              <AdminSidebarContent
-                view={view}
-                setView={setView}
-                setSidebarOpen={setSidebarOpen}
-                handleLogout={handleLogout}
-                pendingCount={users.filter((u) => u.is_active === false).length}
-              />
+              <AdminSidebarContent view={view} setView={setView} setSidebarOpen={setSidebarOpen} handleLogout={handleLogout} pendingCount={users.filter(u => u.is_active === false).length} />
             </motion.aside>
           </>
         )}
@@ -593,16 +537,12 @@ function AdminDashboard() {
 
       {/* ── Desktop Left Sidebar ── */}
       <aside className="hidden md:flex flex-col w-72 h-screen shrink-0 bg-[#002e47] text-white border-r border-[#ece4d6] shadow-md z-20">
-        <AdminSidebarContent
-          view={view}
-          setView={setView}
-          handleLogout={handleLogout}
-          pendingCount={users.filter((u) => u.is_active === false).length}
-        />
+        <AdminSidebarContent view={view} setView={setView} handleLogout={handleLogout} pendingCount={users.filter(u => u.is_active === false).length} />
       </aside>
 
       {/* ── Main content view area ── */}
       <main className="flex-1 flex flex-col h-screen overflow-y-auto min-w-0 bg-[#fff8f2]">
+        
         {/* Desktop Header */}
         <header className="hidden md:block bg-white border-b border-[#ece4d6] p-5 sticky top-0 z-10 shadow-sm shrink-0">
           <div className="flex items-center justify-between">
@@ -618,27 +558,15 @@ function AdminDashboard() {
               </div>
               <div>
                 <h1 className="text-lg font-black text-[#002e47] tracking-tight">
-                  {view === "dashboard"
-                    ? "รายงานยอดขาย & ประวัติ"
-                    : view === "inventory"
-                      ? "จัดการคลังสต็อก & เมนู"
-                      : view === "approvals"
-                        ? "คำขออนุมัติสิทธิ์"
-                        : "จัดการระดับพนักงาน"}
+                  {view === "dashboard" ? "รายงานยอดขาย & ประวัติ" : view === "inventory" ? "จัดการคลังสต็อก & เมนู" : view === "approvals" ? "คำขออนุมัติสิทธิ์" : "จัดการระดับพนักงาน"}
                 </h1>
                 <p className="text-xs text-slate-500 font-semibold">
-                  {view === "dashboard"
-                    ? "วิเคราะห์ยอดขายสะสม ยอดสั่งซื้อ และรายรับทั้งหมดของร้าน"
-                    : view === "inventory"
-                      ? "เปิดปิดเมนูอาหาร ปรับปรุงจำนวนสต็อกวัตถุดิบหน้าร้าน"
-                      : view === "approvals"
-                        ? "อนุมัติหรือปฏิเสธคำขอสิทธิ์การใช้งานจากพนักงาน"
-                        : "จัดการและเปลี่ยนบทบาทสิทธิ์ (Admin / Staff / Customer) ในระบบ"}
+                  {view === "dashboard" ? "วิเคราะห์ยอดขายสะสม ยอดสั่งซื้อ และรายรับทั้งหมดของร้าน" : view === "inventory" ? "เปิดปิดเมนูอาหาร ปรับปรุงจำนวนสต็อกวัตถุดิบหน้าร้าน" : view === "approvals" ? "อนุมัติหรือปฏิเสธคำขอสิทธิ์การใช้งานจากพนักงาน" : "จัดการและเปลี่ยนบทบาทสิทธิ์ (Admin / Staff / Customer) ในระบบ"}
                 </p>
               </div>
             </div>
 
-            <a
+            <a 
               href="/customer"
               className="flex items-center gap-1.5 text-xs font-bold text-[#002e47] bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl px-3.5 py-2 transition"
             >
@@ -652,7 +580,7 @@ function AdminDashboard() {
         <div className="p-4 sm:p-6 flex-1 max-w-6xl w-full mx-auto">
           {view === "dashboard" && <AdminDashboardView orders={orders} loading={loadingOrders} />}
           {view === "inventory" && (
-            <AdminInventoryView
+            <AdminInventoryView 
               ingredients={ingredients}
               loading={loadingIngredients}
               activeSubView={activeSubView}
@@ -663,7 +591,7 @@ function AdminDashboard() {
               setSelectedCategory={setSelectedCategory}
               showAddForm={showAddForm}
               setShowAddForm={setShowAddForm}
-              outOfStockIds={outOfStockIds}
+              dbMenu={dbMenu}
               toggleStock={toggleStock}
               adjustIngredientQty={adjustIngredientQty}
               handleAddIngredientSubmit={handleAddIngredientSubmit}
@@ -684,8 +612,6 @@ function AdminDashboard() {
               editUnit={editUnit}
               setEditUnit={setEditUnit}
               editThreshold={editThreshold}
-              menuItems={menuItems}
-              loadingMenuItems={loadingMenuItems}
               setEditThreshold={setEditThreshold}
               saveIngredientEdit={saveIngredientEdit}
               handleRemoveIngredient={handleRemoveIngredient}
@@ -695,9 +621,9 @@ function AdminDashboard() {
             />
           )}
           {(view === "staff" || view === "approvals") && (
-            <AdminStaffView
-              users={users}
-              loading={loadingUsers}
+            <AdminStaffView 
+              users={users} 
+              loading={loadingUsers} 
               updateUserRole={updateUserRole}
               toggleUserActiveStatus={toggleUserActiveStatus}
               deleteUser={deleteUser}
@@ -711,16 +637,16 @@ function AdminDashboard() {
 }
 
 // ── Sidebar Content Component ──
-function AdminSidebarContent({
-  view,
-  setView,
-  setSidebarOpen,
+function AdminSidebarContent({ 
+  view, 
+  setView, 
+  setSidebarOpen, 
   handleLogout,
-  pendingCount = 0,
-}: {
-  view: string;
-  setView: (v: any) => void;
-  setSidebarOpen?: (b: boolean) => void;
+  pendingCount = 0
+}: { 
+  view: string; 
+  setView: (v: any) => void; 
+  setSidebarOpen?: (b: boolean) => void; 
   handleLogout: () => void;
   pendingCount?: number;
 }) {
@@ -738,57 +664,45 @@ function AdminSidebarContent({
             <Shield size={22} className="stroke-[2.5]" />
           </div>
           <div>
-            <h2 className="font-black text-sm tracking-tight text-white uppercase">
-              แผงผู้ดูแลระบบ
-            </h2>
-            <p className="text-[9px] font-bold text-[#fcc14a] tracking-wider uppercase">
-              ADMIN PANEL
-            </p>
+            <h2 className="font-black text-sm tracking-tight text-white uppercase">แผงผู้ดูแลระบบ</h2>
+            <p className="text-[9px] font-bold text-[#fcc14a] tracking-wider uppercase">ADMIN PANEL</p>
           </div>
         </div>
       </div>
 
       {/* Nav */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
-        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block px-2 mb-2">
-          เมนูเจ้าของร้าน
-        </span>
-
+        <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest block px-2 mb-2">เมนูเจ้าของร้าน</span>
+        
         <button
           onClick={() => selectTab("dashboard")}
           className={`w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-left transition duration-200 cursor-pointer ${
-            view === "dashboard"
-              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]"
+            view === "dashboard" 
+              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]" 
               : "text-white/70 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
           }`}
         >
-          <LayoutDashboard
-            size={18}
-            className={view === "dashboard" ? "text-[#fcc14a]" : "text-white/60"}
-          />
+          <LayoutDashboard size={18} className={view === "dashboard" ? "text-[#fcc14a]" : "text-white/60"} />
           <span className="text-sm">แดชบอร์ดรายได้</span>
         </button>
 
         <button
           onClick={() => selectTab("inventory")}
           className={`w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-left transition duration-200 cursor-pointer ${
-            view === "inventory"
-              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]"
+            view === "inventory" 
+              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]" 
               : "text-white/70 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
           }`}
         >
-          <ClipboardList
-            size={18}
-            className={view === "inventory" ? "text-[#fcc14a]" : "text-white/60"}
-          />
+          <ClipboardList size={18} className={view === "inventory" ? "text-[#fcc14a]" : "text-white/60"} />
           <span className="text-sm">จัดการคลัง & สต็อก</span>
         </button>
 
         <button
           onClick={() => selectTab("staff")}
           className={`w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-left transition duration-200 cursor-pointer ${
-            view === "staff"
-              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]"
+            view === "staff" 
+              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]" 
               : "text-white/70 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
           }`}
         >
@@ -799,16 +713,13 @@ function AdminSidebarContent({
         <button
           onClick={() => selectTab("approvals")}
           className={`w-full flex items-center justify-between px-3 py-3.5 rounded-xl text-left transition duration-200 cursor-pointer ${
-            view === "approvals"
-              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]"
+            view === "approvals" 
+              ? "bg-white/10 text-white font-black border-l-4 border-[#fcc14a]" 
               : "text-white/70 hover:text-white hover:bg-white/5 border-l-4 border-transparent"
           }`}
         >
           <div className="flex items-center gap-3">
-            <UserPlus
-              size={18}
-              className={view === "approvals" ? "text-[#fcc14a]" : "text-white/60"}
-            />
+            <UserPlus size={18} className={view === "approvals" ? "text-[#fcc14a]" : "text-white/60"} />
             <span className="text-sm">คำขออนุมัติสิทธิ์</span>
           </div>
           {pendingCount > 0 && (
@@ -821,7 +732,7 @@ function AdminSidebarContent({
 
       {/* Logout footer */}
       <div className="p-4 border-t border-white/10 bg-white/2 shrink-0">
-        <button
+        <button 
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left text-red-300 hover:text-red-200 hover:bg-white/5 transition duration-200 cursor-pointer text-sm font-semibold"
         >
@@ -839,12 +750,12 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
 
   const filteredOrders = useMemo(() => {
     const now = new Date();
-    return orders.filter((o) => {
+    return orders.filter(o => {
       if (!o.created_at) return true;
       const orderDate = new Date(o.created_at);
       const diffTime = now.getTime() - orderDate.getTime();
       const diffDays = diffTime / (1000 * 60 * 60 * 24);
-
+      
       if (timeRange === "today") {
         return orderDate.toDateString() === now.toDateString();
       }
@@ -862,17 +773,17 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
     const totalOrders = filteredOrders.length;
     const totalRev = filteredOrders.reduce((sum, o) => sum + o.total, 0);
     const avgBill = totalOrders > 0 ? Math.round(totalRev / totalOrders) : 0;
-    const uniqueCustomers = new Set(filteredOrders.map((o) => o.customerName || o.id)).size;
-
+    const uniqueCustomers = new Set(filteredOrders.map(o => o.customerName || o.id)).size;
+    
     // Popular products counter
     const itemsCount: Record<string, number> = {};
-    filteredOrders.forEach((o) => {
+    filteredOrders.forEach(o => {
       o.items?.forEach((item: any) => {
         const cleanName = item.name.split(" (")[0];
         itemsCount[cleanName] = (itemsCount[cleanName] || 0) + item.qty;
       });
     });
-
+    
     const sortedProducts = Object.entries(itemsCount)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
@@ -890,7 +801,7 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
         const hourStr = `${String(i).padStart(2, "0")}:00`;
         dataMap[hourStr] = 0;
       }
-      filteredOrders.forEach((o) => {
+      filteredOrders.forEach(o => {
         if (!o.created_at) return;
         const d = new Date(o.created_at);
         const hourStr = `${String(d.getHours()).padStart(2, "0")}:00`;
@@ -906,7 +817,7 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
         const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
         dataMap[dateStr] = 0;
       }
-      filteredOrders.forEach((o) => {
+      filteredOrders.forEach(o => {
         if (!o.created_at) return;
         const d = new Date(o.created_at);
         const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
@@ -922,7 +833,7 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
         const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
         dataMap[dateStr] = 0;
       }
-      filteredOrders.forEach((o) => {
+      filteredOrders.forEach(o => {
         if (!o.created_at) return;
         const d = new Date(o.created_at);
         const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
@@ -932,40 +843,33 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
       });
     } else {
       // All - sort dates ascending
-      filteredOrders
-        .slice()
-        .reverse()
-        .forEach((o) => {
-          if (!o.created_at) return;
-          const d = new Date(o.created_at);
-          const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-          dataMap[dateStr] = (dataMap[dateStr] || 0) + o.total;
-        });
+      filteredOrders.slice().reverse().forEach(o => {
+        if (!o.created_at) return;
+        const d = new Date(o.created_at);
+        const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+        dataMap[dateStr] = (dataMap[dateStr] || 0) + o.total;
+      });
     }
 
     return Object.entries(dataMap).map(([name, value]) => ({ name, value }));
   }, [filteredOrders, timeRange]);
 
   if (loading) {
-    return (
-      <div className="text-center py-20 font-bold text-gray-500">กำลังดาวน์โหลดข้อมูลการขาย...</div>
-    );
+    return <div className="text-center py-20 font-bold text-gray-500">กำลังดาวน์โหลดข้อมูลการขาย...</div>;
   }
 
   const rangeOptions: { id: typeof timeRange; label: string }[] = [
     { id: "all", label: "ทั้งหมด" },
     { id: "today", label: "วันนี้" },
     { id: "7days", label: "7 วันล่าสุด" },
-    { id: "30days", label: "30 วันล่าสุด (1 เดือน)" },
+    { id: "30days", label: "30 วันล่าสุด (1 เดือน)" }
   ];
 
   return (
     <div className="space-y-6">
       {/* Time Range Filter Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white border border-[#ece4d6] p-3.5 rounded-[22px] gap-3 shadow-sm">
-        <span className="text-xs font-black text-[#002e47]">
-          📅 เลือกช่วงเวลาสรุปข้อมูลแดชบอร์ด:
-        </span>
+        <span className="text-xs font-black text-[#002e47]">📅 เลือกช่วงเวลาสรุปข้อมูลแดชบอร์ด:</span>
         <div className="flex flex-wrap gap-1">
           {rangeOptions.map((opt) => (
             <button
@@ -982,45 +886,35 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
           ))}
         </div>
       </div>
-
+      
       {/* 5 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Total Orders Card */}
         <div className="bg-white border border-[#ece4d6] rounded-[28px] p-5 shadow-sm flex flex-col justify-between min-h-[120px] transition hover:shadow-md">
           <div className="flex items-start justify-between">
-            <span className="text-3xl font-black text-[#002e47] tracking-tight">
-              {stats.totalOrders}
-            </span>
+            <span className="text-3xl font-black text-[#002e47] tracking-tight">{stats.totalOrders}</span>
             <div className="p-2.5 rounded-2xl bg-orange-50 text-orange-500">
               <ClipboardList size={22} className="stroke-[2.5]" />
             </div>
           </div>
-          <span className="text-[11px] font-black text-slate-400 mt-4">
-            ยอดสั่งซื้อสะสม (ออเดอร์)
-          </span>
+          <span className="text-[11px] font-black text-slate-400 mt-4">ยอดสั่งซื้อสะสม (ออเดอร์)</span>
         </div>
 
         {/* Total Revenue Card */}
         <div className="bg-white border border-[#ece4d6] rounded-[28px] p-5 shadow-sm flex flex-col justify-between min-h-[120px] transition hover:shadow-md">
           <div className="flex items-start justify-between">
-            <span className="text-3xl font-black text-[#002e47] tracking-tight">
-              ฿{new Intl.NumberFormat("th-TH").format(stats.totalRev)}
-            </span>
+            <span className="text-3xl font-black text-[#002e47] tracking-tight">฿{new Intl.NumberFormat("th-TH").format(stats.totalRev)}</span>
             <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-500">
               <DollarSign size={22} className="stroke-[2.5]" />
             </div>
           </div>
-          <span className="text-[11px] font-black text-slate-400 mt-4">
-            รายได้สะสมทั้งหมด (บาท)
-          </span>
+          <span className="text-[11px] font-black text-slate-400 mt-4">รายได้สะสมทั้งหมด (บาท)</span>
         </div>
 
         {/* Total Guests Card */}
         <div className="bg-white border border-[#ece4d6] rounded-[28px] p-5 shadow-sm flex flex-col justify-between min-h-[120px] transition hover:shadow-md">
           <div className="flex items-start justify-between">
-            <span className="text-3xl font-black text-[#002e47] tracking-tight">
-              {stats.uniqueCustomers}
-            </span>
+            <span className="text-3xl font-black text-[#002e47] tracking-tight">{stats.uniqueCustomers}</span>
             <div className="p-2.5 rounded-2xl bg-blue-50 text-blue-500">
               <Users size={22} className="stroke-[2.5]" />
             </div>
@@ -1044,9 +938,7 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
         {/* Avg Bill Card */}
         <div className="bg-white border border-[#ece4d6] rounded-[28px] p-5 shadow-sm flex flex-col justify-between min-h-[120px] transition hover:shadow-md">
           <div className="flex items-start justify-between">
-            <span className="text-3xl font-black text-[#002e47] tracking-tight">
-              ฿{stats.avgBill}
-            </span>
+            <span className="text-3xl font-black text-[#002e47] tracking-tight">฿{stats.avgBill}</span>
             <div className="p-2.5 rounded-2xl bg-purple-50 text-purple-500">
               <Flame size={22} className="stroke-[2.5]" />
             </div>
@@ -1057,8 +949,10 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
 
       {/* Main Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
         {/* Left Columns (Chart + Table) */}
         <div className="lg:col-span-2 space-y-6">
+          
           {/* Revenue Trend Line Chart */}
           <div className="bg-white border border-[#ece4d6] rounded-[28px] p-5 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-4">
@@ -1075,41 +969,18 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
                 <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#002e47" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#002e47" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#002e47" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#002e47" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1ebe4" />
-                  <XAxis
-                    dataKey="name"
-                    stroke="#5a6e7a"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={false}
-                  />
+                  <XAxis dataKey="name" stroke="#5a6e7a" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis stroke="#5a6e7a" fontSize={10} tickLine={false} axisLine={false} />
-                  <ChartTooltip
-                    contentStyle={{
-                      background: "#fff",
-                      border: "1px solid #ece4d6",
-                      borderRadius: "16px",
-                      fontSize: "11px",
-                      fontFamily: "sans-serif",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                    }}
-                    formatter={(value) => [
-                      `฿${new Intl.NumberFormat("th-TH").format(Number(value))}`,
-                      "ยอดขาย",
-                    ]}
+                  <ChartTooltip 
+                    contentStyle={{ background: "#fff", border: "1px solid #ece4d6", borderRadius: "16px", fontSize: "11px", fontFamily: "sans-serif", boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}
+                    formatter={(value) => [`฿${new Intl.NumberFormat("th-TH").format(Number(value))}`, "ยอดขาย"]}
                   />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#002e47"
-                    strokeWidth={2.5}
-                    fillOpacity={1}
-                    fill="url(#colorValue)"
-                  />
+                  <Area type="monotone" dataKey="value" stroke="#002e47" strokeWidth={2.5} fillOpacity={1} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -1131,15 +1002,13 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-slate-400 italic">
-                        ไม่มีข้อมูลออเดอร์ในช่วงเวลานี้
-                      </td>
+                      <td colSpan={4} className="py-8 text-center text-slate-400 italic">ไม่มีข้อมูลออเดอร์ในช่วงเวลานี้</td>
                     </tr>
                   ) : (
                     filteredOrders.slice(0, 5).map((o) => {
                       const isDineIn = o.orderType === "dine-in";
                       const isTakeaway = o.orderType === "takeaway";
-
+                      
                       let badgeLabel = "เดลิเวอรี่";
                       let badgeColor = "bg-blue-50 text-blue-800 border-blue-100";
                       if (isDineIn) {
@@ -1153,19 +1022,13 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
                       return (
                         <tr key={o.id} className="hover:bg-slate-50/40 transition">
                           <td className="py-3.5 font-black text-[#002e47]">{o.orderNumber}</td>
-                          <td className="py-3.5 text-slate-400">
-                            {o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date}
-                          </td>
+                          <td className="py-3.5 text-slate-400">{o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date}</td>
                           <td className="py-3.5">
-                            <span
-                              className={`px-2 py-0.5 rounded-lg text-[9px] font-black border ${badgeColor}`}
-                            >
+                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black border ${badgeColor}`}>
                               {badgeLabel}
                             </span>
                           </td>
-                          <td className="py-3.5 text-right font-black text-[#002e47]">
-                            ฿{o.total}
-                          </td>
+                          <td className="py-3.5 text-right font-black text-[#002e47]">฿{o.total}</td>
                         </tr>
                       );
                     })
@@ -1190,24 +1053,16 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="py-8 text-center text-slate-400 italic">
-                        ไม่มีรายชื่อลูกค้าใหม่
-                      </td>
+                      <td colSpan={3} className="py-8 text-center text-slate-400 italic">ไม่มีรายชื่อลูกค้าใหม่</td>
                     </tr>
                   ) : (
                     filteredOrders.slice(0, 5).map((o, idx) => {
                       const isDineIn = o.orderType === "dine-in";
                       return (
                         <tr key={idx} className="hover:bg-slate-50/40 transition">
-                          <td className="py-3.5 font-black text-[#002e47]">
-                            {o.customerName || "คุณลูกค้า"}
-                          </td>
+                          <td className="py-3.5 font-black text-[#002e47]">{o.customerName || "คุณลูกค้า"}</td>
                           <td className="py-3.5 text-slate-500 font-bold">
-                            {isDineIn
-                              ? `ทานที่ร้าน (โต๊ะ ${o.tableNumber || "-"})`
-                              : o.orderType === "takeaway"
-                                ? "กลับบ้าน (Takeaway)"
-                                : "จัดส่ง (Delivery)"}
+                            {isDineIn ? `ทานที่ร้าน (โต๊ะ ${o.tableNumber || "-"})` : o.orderType === "takeaway" ? "กลับบ้าน (Takeaway)" : "จัดส่ง (Delivery)"}
                           </td>
                           <td className="py-3.5 text-right text-slate-400">
                             {o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date}
@@ -1228,12 +1083,10 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
             <h3 className="font-black text-sm text-[#002e47] mb-4 flex items-center gap-1.5">
               <span>📊 5 อันดับเมนูขายดีที่สุด</span>
             </h3>
-
+            
             <div className="space-y-6 flex-1">
               {stats.sortedProducts.length === 0 ? (
-                <p className="text-xs text-gray-400 italic py-16 text-center">
-                  ไม่มีข้อมูลยอดขายเมนู
-                </p>
+                <p className="text-xs text-gray-400 italic py-16 text-center">ไม่มีข้อมูลยอดขายเมนู</p>
               ) : (
                 stats.sortedProducts.slice(0, 5).map((p, idx) => {
                   const maxCount = stats.sortedProducts[0]?.count || 1;
@@ -1250,11 +1103,11 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
                         </div>
                         <span className="text-[#002e47]">{p.count} จาน</span>
                       </div>
-
+                      
                       {/* Dark Blue Progress bar */}
                       <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-[#002e47] h-full rounded-full transition-all duration-500"
+                        <div 
+                          className="bg-[#002e47] h-full rounded-full transition-all duration-500" 
                           style={{ width: `${ratio}%` }}
                         />
                       </div>
@@ -1265,6 +1118,7 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
             </div>
           </div>
         </div>
+
       </div>
     </div>
   );
@@ -1274,8 +1128,6 @@ function AdminDashboardView({ orders, loading }: { orders: any[]; loading: boole
 function AdminInventoryView({
   ingredients,
   loading,
-  menuItems,
-  loadingMenuItems,
   activeSubView,
   setActiveSubView,
   searchQuery,
@@ -1284,7 +1136,7 @@ function AdminInventoryView({
   setSelectedCategory,
   showAddForm,
   setShowAddForm,
-  outOfStockIds,
+  dbMenu,
   toggleStock,
   adjustIngredientQty,
   handleAddIngredientSubmit,
@@ -1310,8 +1162,9 @@ function AdminInventoryView({
   handleRemoveIngredient,
   formatUnitAndQty,
   groupedIngredients,
-  setIngredients,
+  setIngredients
 }: any) {
+
   const handleSeedDefaultData = async () => {
     if (!confirm("คุณต้องการนำเข้าวัตถุดิบตั้งต้นสำหรับสาขาหรือไม่?")) return;
     const defaults = [
@@ -1326,7 +1179,7 @@ function AdminInventoryView({
       { name: "หอยลาย", quantity: 1000, unit: "g", min_threshold: 200 },
       { name: "ไข่ไก่", quantity: 100, unit: "pcs", min_threshold: 15 },
       { name: "ไส้กรอก", quantity: 50, unit: "pcs", min_threshold: 10 },
-      { name: "กุนเชียง", quantity: 50, unit: "pcs", min_threshold: 10 },
+      { name: "กุนเชียง", quantity: 50, unit: "pcs", min_threshold: 10 }
     ];
 
     try {
@@ -1343,9 +1196,7 @@ function AdminInventoryView({
 
   const toggleIngredientActive = async (id: string, current: boolean) => {
     const nextVal = !current;
-    setIngredients((prev: any[]) =>
-      prev.map((i) => (i.id === id ? { ...i, is_active: nextVal } : i)),
-    );
+    setIngredients((prev: any[]) => prev.map(i => i.id === id ? { ...i, is_active: nextVal } : i));
     try {
       await supabase.from("ingredients").update({ is_active: nextVal }).eq("id", id);
     } catch {}
@@ -1359,29 +1210,26 @@ function AdminInventoryView({
     { id: "rice", label: "ข้าวผัด" },
     { id: "vegetarian", label: "มังสวิรัติ" },
     { id: "drinks", label: "เครื่องดื่ม" },
-    { id: "dessert", label: "ของหวาน" },
+    { id: "dessert", label: "ของหวาน" }
   ];
 
   const filteredMenuItems = useMemo(() => {
-    const sourceMenuItems = menuItems.length > 0 ? menuItems : MENU;
-    return sourceMenuItems.filter((item: MenuItem) => {
-      const matchesSearch =
-        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.desc.toLowerCase().includes(searchQuery.toLowerCase());
+    return dbMenu.filter(item => {
+      const itemName = item.name_th || item.name || "";
+      const itemDesc = item.description_th || item.description || "";
+      const matchesSearch = itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        itemDesc.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [menuItems, searchQuery, selectedCategory]);
+  }, [dbMenu, searchQuery, selectedCategory]);
 
   const renderRow = (item: any) => {
     const isLowStock = Number(item.quantity) <= Number(item.min_threshold);
     const isEditing = editingId === item.id;
 
     return (
-      <tr
-        key={item.id}
-        className={`hover:bg-slate-50/70 border-b border-slate-100 ${isLowStock ? "bg-red-50/10" : ""}`}
-      >
+      <tr key={item.id} className={`hover:bg-slate-50/70 border-b border-slate-100 ${isLowStock ? "bg-red-50/10" : ""}`}>
         <td className="py-3 px-4 font-bold text-[#002e47]">
           {isEditing ? (
             <input
@@ -1394,9 +1242,7 @@ function AdminInventoryView({
             <span className="flex items-center gap-1.5">
               <span>{item.name}</span>
               {isLowStock && (
-                <span className="bg-red-100 text-red-800 text-[8px] font-extrabold uppercase px-1 rounded">
-                  เหลือน้อย
-                </span>
+                <span className="bg-red-100 text-red-800 text-[8px] font-extrabold uppercase px-1 rounded">เหลือน้อย</span>
               )}
             </span>
           )}
@@ -1405,9 +1251,7 @@ function AdminInventoryView({
           <button
             onClick={() => toggleIngredientActive(item.id, item.is_active !== false)}
             className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wider ${
-              item.is_active !== false
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-slate-100 text-slate-400 border border-slate-200"
+              item.is_active !== false ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-400 border border-slate-200"
             }`}
           >
             {item.is_active !== false ? "🟢 เปิดใช้งาน" : "⚪ ปิดใช้งาน"}
@@ -1502,6 +1346,7 @@ function AdminInventoryView({
 
   return (
     <div className="space-y-6">
+      
       {/* Filters Bar */}
       <div className="bg-white border border-[#ece4d6] rounded-3xl p-5 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
@@ -1545,9 +1390,7 @@ function AdminInventoryView({
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
                 className={`px-3 py-1.5 rounded-xl font-bold text-xs tracking-wider transition cursor-pointer ${
-                  selectedCategory === cat.id
-                    ? "bg-[#002e47] text-white shadow-inner"
-                    : "bg-slate-100 text-[#5a6e7a] hover:bg-slate-200"
+                  selectedCategory === cat.id ? "bg-[#002e47] text-white shadow-inner" : "bg-slate-100 text-[#5a6e7a] hover:bg-slate-200"
                 }`}
               >
                 {cat.label}
@@ -1559,16 +1402,11 @@ function AdminInventoryView({
 
       {/* Add Ingredient Form */}
       {activeSubView === "ingredients" && showAddForm && (
-        <form
-          onSubmit={handleAddIngredientSubmit}
-          className="bg-white border border-[#ece4d6] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4"
-        >
+        <form onSubmit={handleAddIngredientSubmit} className="bg-white border border-[#ece4d6] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
           <h3 className="text-sm font-black text-[#002e47]">นำวัตถุดิบใหม่เข้าคลังสต็อก</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">
-                ชื่อวัตถุดิบ
-              </label>
+              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">ชื่อวัตถุดิบ</label>
               <input
                 type="text"
                 placeholder="เช่น หมูสับ, คะน้า"
@@ -1578,9 +1416,7 @@ function AdminInventoryView({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">
-                จำนวนเริ่มต้น
-              </label>
+              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">จำนวนเริ่มต้น</label>
               <input
                 type="number"
                 placeholder="เช่น 1000"
@@ -1590,9 +1426,7 @@ function AdminInventoryView({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">
-                หน่วยนับ
-              </label>
+              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">หน่วยนับ</label>
               <select
                 value={newIngUnit}
                 onChange={(e) => setNewIngUnit(e.target.value)}
@@ -1604,9 +1438,7 @@ function AdminInventoryView({
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">
-                เตือนเมื่อเหลือน้อยกว่า
-              </label>
+              <label className="block text-[11px] font-bold text-[#5a6e7a] uppercase mb-1.5">เตือนเมื่อเหลือน้อยกว่า</label>
               <input
                 type="number"
                 placeholder="เช่น 200"
@@ -1667,23 +1499,11 @@ function AdminInventoryView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                  <tr className="bg-slate-50/50">
-                    <td colSpan={5} className="py-2 px-4 font-black text-xs text-[#002e47]">
-                      🥩 เนื้อสัตว์
-                    </td>
-                  </tr>
+                  <tr className="bg-slate-50/50"><td colSpan={5} className="py-2 px-4 font-black text-xs text-[#002e47]">🥩 เนื้อสัตว์</td></tr>
                   {groupedIngredients.meat.map(renderRow)}
-                  <tr className="bg-slate-50/50">
-                    <td colSpan={5} className="py-2 px-4 font-black text-xs text-[#002e47]">
-                      🐙 อาหารทะเล
-                    </td>
-                  </tr>
+                  <tr className="bg-slate-50/50"><td colSpan={5} className="py-2 px-4 font-black text-xs text-[#002e47]">🐙 อาหารทะเล</td></tr>
                   {groupedIngredients.seafood.map(renderRow)}
-                  <tr className="bg-slate-50/50">
-                    <td colSpan={5} className="py-2 px-4 font-black text-xs text-[#002e47]">
-                      🥚 ไข่ & เครื่องเคียง
-                    </td>
-                  </tr>
+                  <tr className="bg-slate-50/50"><td colSpan={5} className="py-2 px-4 font-black text-xs text-[#002e47]">🥚 ไข่ & เครื่องเคียง</td></tr>
                   {[...groupedIngredients.toppings, ...groupedIngredients.others].map(renderRow)}
                 </tbody>
               </table>
@@ -1693,37 +1513,32 @@ function AdminInventoryView({
       ) : (
         /* Menu Items */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredMenuItems.map((item: MenuItem) => {
-            const isOutOfStock = outOfStockIds.includes(item.id);
+          {filteredMenuItems.map((item) => {
+            const isOutOfStock = !item.is_available;
+            const itemName = item.name_th || item.name;
+            const itemImage = item.image_url || "";
+            const itemPrice = item.price || 0;
             return (
-              <div
-                key={item.id}
+              <div 
+                key={item.id} 
                 className={`bg-white border rounded-3xl p-4 flex gap-4 transition shadow-sm hover:shadow-md relative overflow-hidden ${
                   isOutOfStock ? "border-red-200 bg-red-50/20" : "border-[#ece4d6]"
                 }`}
               >
                 <div className="h-16 w-16 rounded-2xl overflow-hidden bg-slate-100 shrink-0 relative">
-                  <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                  {isOutOfStock && (
-                    <span className="absolute inset-0 bg-red-600/10 text-red-600 font-bold text-[9px] flex items-center justify-center">
-                      หมด
-                    </span>
-                  )}
+                  <img src={itemImage} alt={itemName} className="h-full w-full object-cover" />
+                  {isOutOfStock && <span className="absolute inset-0 bg-red-600/10 text-red-600 font-bold text-[9px] flex items-center justify-center">หมด</span>}
                 </div>
                 <div className="flex-1 flex flex-col justify-between min-w-0">
                   <div>
                     <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-bold text-gray-400 uppercase">
-                        {item.category}
-                      </span>
-                      <span className="text-xs font-black text-[#002e47]">฿{item.price}</span>
+                      <span className="text-[9px] font-bold text-gray-400 uppercase">{item.category}</span>
+                      <span className="text-xs font-black text-[#002e47]">฿{itemPrice}</span>
                     </div>
-                    <h3 className="text-xs font-bold text-[#002e47] truncate">{item.name}</h3>
+                    <h3 className="text-xs font-bold text-[#002e47] truncate">{itemName}</h3>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                    <span
-                      className={`text-[10px] font-black ${isOutOfStock ? "text-red-500" : "text-emerald-600"}`}
-                    >
+                    <span className={`text-[10px] font-black ${isOutOfStock ? "text-red-500" : "text-emerald-600"}`}>
                       {isOutOfStock ? "● ปิดชั่วคราว" : "● ขายปกติ"}
                     </span>
                     <button
@@ -1734,7 +1549,7 @@ function AdminInventoryView({
                     >
                       <span
                         className={`absolute left-[2px] top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ease-in-out ${
-                          isOutOfStock ? "translate-x-4" : "translate-x-0"
+                          isOutOfStock ? "translate-x-0" : "translate-x-4"
                         }`}
                       />
                     </button>
@@ -1750,16 +1565,16 @@ function AdminInventoryView({
 }
 
 // ── 3. Staff Role Management View Component ──
-function AdminStaffView({
-  users,
-  loading,
-  updateUserRole,
+function AdminStaffView({ 
+  users, 
+  loading, 
+  updateUserRole, 
   toggleUserActiveStatus,
   deleteUser,
-  isApprovalsTab = false,
-}: {
-  users: any[];
-  loading: boolean;
+  isApprovalsTab = false
+}: { 
+  users: any[]; 
+  loading: boolean; 
   updateUserRole: (id: string, role: any) => void;
   toggleUserActiveStatus: (id: string, current: boolean) => void;
   deleteUser: (id: string, name: string) => void;
@@ -1768,17 +1583,13 @@ function AdminStaffView({
   const [search, setSearch] = useState("");
 
   if (loading) {
-    return (
-      <div className="text-center py-20 font-bold text-gray-500">
-        กำลังดาวน์โหลดรายชื่อผู้ใช้งาน...
-      </div>
-    );
+    return <div className="text-center py-20 font-bold text-gray-500">กำลังดาวน์โหลดรายชื่อผู้ใช้งาน...</div>;
   }
 
   const filteredUsers = users.filter((u) => {
     const isTargetStatus = isApprovalsTab ? u.is_active === false : u.is_active !== false;
     if (!isTargetStatus) return false;
-
+    
     const q = search.toLowerCase();
     return (
       (u.display_name && u.display_name.toLowerCase().includes(q)) ||
@@ -1791,9 +1602,7 @@ function AdminStaffView({
     <div className="bg-white border border-[#ece4d6] rounded-3xl p-5 shadow-sm space-y-4">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
         <h2 className="text-sm font-black text-[#002e47]">
-          {isApprovalsTab
-            ? "⏳ คำขออนุมัติสิทธิ์ (รอตรวจสอบ)"
-            : "👥 รายชื่อผู้ใช้ระบบและสิทธิ์การเข้าถึง"}
+          {isApprovalsTab ? "⏳ คำขออนุมัติสิทธิ์ (รอตรวจสอบ)" : "👥 รายชื่อผู้ใช้ระบบและสิทธิ์การเข้าถึง"}
         </h2>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -1818,11 +1627,7 @@ function AdminStaffView({
           </thead>
           <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
             {filteredUsers.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="py-8 text-center text-slate-400 italic">
-                  ไม่พบข้อมูลรายชื่อในระบบ
-                </td>
-              </tr>
+              <tr><td colSpan={4} className="py-8 text-center text-slate-400 italic">ไม่พบข้อมูลรายชื่อในระบบ</td></tr>
             ) : (
               filteredUsers.map((user) => {
                 const isActive = user.is_active !== false;
@@ -1831,37 +1636,25 @@ function AdminStaffView({
                     <td className="py-3 px-4 flex items-center gap-3">
                       <div className="h-9 w-9 rounded-full bg-slate-100 border overflow-hidden shrink-0 flex items-center justify-center font-bold text-[#002e47] text-xs">
                         {user.picture_url ? (
-                          <img
-                            src={user.picture_url}
-                            alt={user.display_name}
-                            className="h-full w-full object-cover"
-                          />
+                          <img src={user.picture_url} alt={user.display_name} className="h-full w-full object-cover" />
                         ) : (
                           user.display_name.substring(0, 2).toUpperCase()
                         )}
                       </div>
                       <div>
                         <p className="font-extrabold text-[#002e47]">{user.display_name}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {user.email || "ล็อคอินผ่าน LINE/Guest"}
-                        </p>
+                        <p className="text-[10px] text-slate-400">{user.email || "ล็อคอินผ่าน LINE/Guest"}</p>
                       </div>
                     </td>
                     <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                          user.role === "admin"
-                            ? "bg-purple-100 text-purple-800 border-purple-200"
-                            : user.role === "staff"
-                              ? "bg-blue-100 text-blue-800 border-blue-200"
-                              : "bg-slate-100 text-slate-600 border-slate-200"
-                        }`}
-                      >
-                        {user.role === "admin" ? (
-                          <ShieldCheck size={11} />
-                        ) : user.role === "staff" ? (
-                          <Shield size={11} />
-                        ) : null}
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                        user.role === "admin" 
+                          ? "bg-purple-100 text-purple-800 border-purple-200" 
+                          : user.role === "staff" 
+                          ? "bg-blue-100 text-blue-800 border-blue-200" 
+                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}>
+                        {user.role === "admin" ? <ShieldCheck size={11} /> : user.role === "staff" ? <Shield size={11} /> : null}
                         {user.role.toUpperCase()}
                       </span>
                     </td>
@@ -1874,17 +1667,13 @@ function AdminStaffView({
                         <button
                           onClick={() => toggleUserActiveStatus(user.id, isActive)}
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-xl text-[10px] font-bold border transition cursor-pointer active:scale-95 ${
-                            isActive
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            isActive 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
                               : "bg-red-50 text-red-700 border-red-200"
                           }`}
                         >
                           {isActive ? <UserCheck size={11} /> : <UserX size={11} />}
-                          {isActive
-                            ? "ใช้งานได้"
-                            : isApprovalsTab
-                              ? "รออนุมัติ / ระงับชั่วคราว"
-                              : "ระงับชั่วคราว"}
+                          {isActive ? "ใช้งานได้" : isApprovalsTab ? "รออนุมัติ / ระงับชั่วคราว" : "ระงับชั่วคราว"}
                         </button>
                       )}
                     </td>
@@ -1894,9 +1683,7 @@ function AdminStaffView({
                           <button
                             onClick={() => updateUserRole(user.id, "admin")}
                             className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
-                              user.role === "admin"
-                                ? "bg-purple-600 text-white border-purple-600"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              user.role === "admin" ? "bg-purple-600 text-white border-purple-600" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                             }`}
                           >
                             Admin
@@ -1904,9 +1691,7 @@ function AdminStaffView({
                           <button
                             onClick={() => updateUserRole(user.id, "staff")}
                             className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
-                              user.role === "staff"
-                                ? "bg-blue-600 text-white border-blue-600"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              user.role === "staff" ? "bg-blue-600 text-white border-blue-600" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                             }`}
                           >
                             Staff
@@ -1914,9 +1699,7 @@ function AdminStaffView({
                           <button
                             onClick={() => updateUserRole(user.id, "customer")}
                             className={`px-2 py-1 rounded text-[10px] font-bold border transition cursor-pointer ${
-                              user.role === "customer"
-                                ? "bg-slate-700 text-white border-slate-700"
-                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              user.role === "customer" ? "bg-slate-700 text-white border-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                             }`}
                           >
                             Customer

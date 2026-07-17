@@ -76,8 +76,8 @@ export type TableUpdate = Partial<TableInsert>;
 // ── Users (ผู้ใช้งาน LINE) ──────────────────────────────────────
 export type UserRow = {
   id: string;
-  line_user_id: string | null;
   auth_user_id: string | null;
+  line_user_id: string;
   display_name: string;
   email: string | null;
   picture_url: string | null;
@@ -91,8 +91,8 @@ export type UserRow = {
 
 export type UserInsert = {
   id?: string;
-  line_user_id?: string | null;
   auth_user_id?: string | null;
+  line_user_id: string;
   display_name: string;
   email?: string | null;
   picture_url?: string | null;
