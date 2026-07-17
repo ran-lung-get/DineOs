@@ -107,6 +107,8 @@ const uiDictionary: Record<string, Record<Language, string>> = {
   "กำลังเตรียม": { th: "กำลังเตรียม", en: "Preparing", zh: "正在配餐" },
   "กำลังจัดส่ง": { th: "กำลังจัดส่ง", en: "Out for Delivery", zh: "配送中" },
   "สำเร็จ": { th: "สำเร็จ", en: "Completed", zh: "已完成" },
+  "เสร็จสิ้น": { th: "เสร็จสิ้น", en: "Completed", zh: "已完成" },
+  "กำลังดำเนินการ": { th: "กำลังดำเนินการ", en: "In Progress", zh: "进行中" },
   "ยกเลิกแล้ว": { th: "ยกเลิกแล้ว", en: "Cancelled", zh: "已取消" },
   "ขอคืนเงิน": { th: "ขอคืนเงิน", en: "Refund Requested", zh: "申请退款" },
   "รอรับออเดอร์": { th: "รอรับออเดอร์", en: "Awaiting Confirmation", zh: "等待接单" },
@@ -167,6 +169,22 @@ const uiDictionary: Record<string, Record<Language, string>> = {
   "ไข่ต้ม": { th: "ไข่ต้ม", en: "Boiled Egg", zh: "水煮蛋" },
   "ไข่เจียว": { th: "ไข่เจียว", en: "Omelet", zh: "煎蛋卷" },
   "ไข่ดาว": { th: "ไข่ดาว", en: "Fried Egg", zh: "荷包蛋" },
+  "แนะนำ": { th: "แนะนำ", en: "Recommend", zh: "推荐" },
+  "จำเป็น": { th: "จำเป็น", en: "Required", zh: "必选" },
+  "อาหารจานหลัก": { th: "อาหารจานหลัก", en: "Main Dish", zh: "主食" },
+  "รายการเมนู": { th: "รายการเมนู", en: "Menu List", zh: "菜单列表" },
+  "ดูตะกร้าสินค้า": { th: "ดูตะกร้าสินค้า", en: "View Cart", zh: "查看购物车" },
+  "เรียงลำดับตาม": { th: "เรียงลำดับตาม", en: "Sort by", zh: "排序方式" },
+  "เสร็จสิ้นการเลือก": { th: "เสร็จสิ้นการเลือก", en: "Done", zh: "完成" },
+  "🔥 ยอดนิยม (แนะนำ)": { th: "🔥 ยอดนิยม (แนะนำ)", en: "🔥 Popular (Recommend)", zh: "🔥 最受欢迎 (推荐)" },
+  "เมนูขายดีประจำสัปดาห์": { th: "เมนูขายดีประจำสัปดาห์", en: "Weekly best sellers", zh: "本周畅销菜单" },
+  "💵 ราคา: ต่ำ - สูง": { th: "💵 ราคา: ต่ำ - สูง", en: "💵 Price: Low - High", zh: "💵 价格：低 - 高" },
+  "เมนูราคาประหยัด เรียงตามเงินบาท": { th: "เมนูราคาประหยัด เรียงตามเงินบาท", en: "Budget menus, sorted by price", zh: "经济实惠菜单，按价格排序" },
+  "💵 ราคา: สูง - ต่ำ": { th: "💵 ราคา: สูง - ต่ำ", en: "💵 Price: High - Low", zh: "💵 价格：高 - 低" },
+  "เมนูระดับพรีเมียมคัดสรรพิเศษ": { th: "เมนูระดับพรีเมียมคัดสรรพิเศษ", en: "Premium selection menus", zh: "特别精选优质菜单" },
+  "หมด": { th: "หมด", en: "Out of stock", zh: "售罄" },
+  "ฟรี": { th: "ฟรี", en: "Free", zh: "免费" },
+  "เพิ่มเติม": { th: "เพิ่มเติม", en: "Addons", zh: "加料" },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -362,6 +380,21 @@ const menuDictionary: Record<string, Record<Language, { name: string; desc: stri
     },
     zh: { name: "清炒什锦蔬菜盖饭（素食）", desc: "清脆蔬菜快炒，少油低脂，采用素食酱油调味，配米饭" },
   },
+  "ข้าวต้ม": {
+    th: { name: "ข้าวต้ม", desc: "ข้าวต้มร้อนๆ ปรุงรสกลมกล่อม ทานง่ายสบายท้อง" },
+    en: { name: "Thai Rice Soup", desc: "Hot and comforting Thai style rice soup, gently seasoned" },
+    zh: { name: "泰式泡饭", desc: "热气腾腾的泰式泡饭，清淡开胃" },
+  },
+  "ข้าวมันไก่": {
+    th: { name: "ข้าวมันไก่", desc: "ข้าวมันไก่ต้มเนื้อนุ่ม เสิร์ฟพร้อมข้าวมันหอมๆ และน้ำจิ้มสูตรเด็ด" },
+    en: { name: "Hainanese Chicken Rice", desc: "Tender boiled chicken served with fragrant seasoned rice and savory dipping sauce" },
+    zh: { name: "海南鸡饭", desc: "鲜嫩白斩鸡配以香气四溢的鸡油饭和秘制蘸酱" },
+  },
+  "ข้าวซอย": {
+    th: { name: "ข้าวซอย", desc: "ข้าวซอยเส้นนุ่มในน้ำแกงกะหรี่เข้มข้น ท็อปด้วยหมี่กรอบรสชาติเหนือแท้ๆ" },
+    en: { name: "Khao Soi (Northern Curry Noodles)", desc: "Soft egg noodles in rich yellow curry broth, topped with crispy noodles" },
+    zh: { name: "泰北金面", desc: "浓郁黄咖喱椰奶汤底配以软面条，上覆香脆炸面" },
+  },
 };
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -393,64 +426,62 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return entry[language];
     }
 
-    // Try dynamic translation cache
+    // Try dynamic translation cache (UI keys use format "<lang>:<key>")
     const cacheKey = `${language}:${key}`;
     if (localCache[cacheKey]) {
       return localCache[cacheKey];
     }
 
     // Attempt dynamic translation in background
-    triggerAsyncTranslation(key);
+    triggerAsyncTranslation(key, "ui");
 
     return key;
   };
 
   // Translation helper for Menus (returns name or description)
+  // Uses field-qualified cache keys: "<lang>:name:<text>" and "<lang>:desc:<text>"
+  // so that name and description for new items never collide in the cache.
   const tMenu = (text: string, field: "name" | "desc" = "name"): string => {
     if (language === "th") return text;
-    
-    // Check if the exact menu item exists in menuDictionary
-    let cleanKey = text;
-    let foundEntry = menuDictionary[cleanKey];
 
-    // If we're looking for description, we find by the menu name key
+    // 1. Look up by exact Thai name key in the static dictionary
+    let foundEntry = menuDictionary[text];
+
+    // 2. For "desc" lookups, find the entry whose Thai desc matches
     if (!foundEntry && field === "desc") {
-      // Find the menu name that has this description in Thai
       const matchedName = Object.keys(menuDictionary).find(
         (k) => menuDictionary[k].th.desc === text
       );
-      if (matchedName) {
-        cleanKey = matchedName;
-        foundEntry = menuDictionary[cleanKey];
-      }
+      if (matchedName) foundEntry = menuDictionary[matchedName];
     }
 
     if (foundEntry && foundEntry[language]) {
       return foundEntry[language][field];
     }
 
-    // If not found in static dictionary, treat it as general UI text (which does dynamic translate)
-    const cacheKey = `${language}:${text}`;
+    // 3. Not in static dictionary — use field-qualified dynamic cache
+    const cacheKey = `${language}:${field}:${text}`;
     if (localCache[cacheKey]) {
       return localCache[cacheKey];
     }
 
-    triggerAsyncTranslation(text);
+    // 4. Fire async translation (returns original text until done, then re-renders)
+    triggerAsyncTranslation(text, field);
 
     return text;
   };
 
-  // Triggers API translation in background and caches results
-  const triggerAsyncTranslation = async (text: string) => {
+  // Triggers API translation in background and stores result in state (causing re-render)
+  const triggerAsyncTranslation = async (text: string, field: "name" | "desc" | "ui" = "ui") => {
     if (!text.trim() || language === "th") return;
-    const cacheKey = `${language}:${text}`;
-    
+    const cacheKey = field === "ui" ? `${language}:${text}` : `${language}:${field}:${text}`;
+
     if (localCache[cacheKey] || loadingLanguages[cacheKey]) return;
 
     setLoadingLanguages((prev) => ({ ...prev, [cacheKey]: true }));
 
     try {
-      console.log(`[i18n] Translating dynamically to ${language}:`, text);
+      console.log(`[i18n] Translating (${field}) to ${language}:`, text);
       const res = await translateApi({
         data: {
           text,
@@ -460,7 +491,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
 
       if (res && res.translatedText) {
-        const updatedCache = { ...localCache, [cacheKey]: res.translatedText };
+        const updatedCache = { ...dynamicCache, ...localCache, [cacheKey]: res.translatedText };
+        dynamicCache = updatedCache;
         setLocalCache(updatedCache);
         if (typeof window !== "undefined") {
           localStorage.setItem(dynamicCacheKey, JSON.stringify(updatedCache));

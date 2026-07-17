@@ -62,11 +62,11 @@ function CaptainDashboard() {
         if (ordersError) throw ordersError;
 
         const safeOrders = ordersData || [];
-        const totalSales = safeOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+        const totalSales = safeOrders.reduce((sum: number, o: { id: string; total: number; created_at: string }) => sum + (o.total || 0), 0);
         const totalOrders = safeOrders.length;
         const avgOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0;
 
-        const orderIds = safeOrders.map(o => o.id);
+        const orderIds = safeOrders.map((o: { id: string; total: number; created_at: string }) => o.id);
         
         let bestSellers: { name: string; quantity: number }[] = [];
         if (orderIds.length > 0) {
@@ -77,9 +77,10 @@ function CaptainDashboard() {
             .gte("created_at", startDate.toISOString());
             
           if (!itemsError && itemsData) {
-            const validItems = itemsData.filter(item => orderIds.includes(item.order_id));
+            type ItemData = { name: string; quantity: number; order_id: string; created_at: string };
+            const validItems = itemsData.filter((item: ItemData) => orderIds.includes(item.order_id));
             const itemCounts: Record<string, number> = {};
-            validItems.forEach(item => {
+            validItems.forEach((item: ItemData) => {
               itemCounts[item.name] = (itemCounts[item.name] || 0) + item.quantity;
             });
             bestSellers = Object.entries(itemCounts)
@@ -95,7 +96,7 @@ function CaptainDashboard() {
           hourCounts[`${i}:00`] = 0;
         }
 
-        safeOrders.forEach(o => {
+        safeOrders.forEach((o: { id: string; total: number; created_at: string }) => {
           const d = new Date(o.created_at);
           const h = d.getHours();
           const key = `${h}:00`;
