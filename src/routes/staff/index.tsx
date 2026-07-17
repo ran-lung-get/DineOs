@@ -320,9 +320,6 @@ function KitchenMonitor() {
     checkAuth();
   }, []);
 
-  // track last known pending IDs for sound notification
-  const lastPendingIdsRef = useRef<Set<string>>(new Set());
-
   const fetchSupabaseOrders = async () => {
     try {
       const { data: dbOrders, error: dbOrdersError } = await supabase
@@ -367,19 +364,11 @@ function KitchenMonitor() {
           };
         });
 
-        // Play sound when new pending order arrives from Supabase
-        const newPendingIds = new Set(
-          mappedOrders.filter(o => o.status === "รอดำเนินการ").map(o => o.id)
-        );
-        const hasNewOrder = [...newPendingIds].some(id => !lastPendingIdsRef.current.has(id));
-        if (hasNewOrder && lastPendingIdsRef.current.size > 0 && soundEnabled) {
-          playNotificationSound();
-        }
-        lastPendingIdsRef.current = newPendingIds;
-
         setOrders((prev) => {
           const localOnly = prev.filter(p => !p.id.startsWith("hist_") && !p.id.includes("-") && !mappedOrders.some(m => m.id === p.id));
-          return [...mappedOrders, ...localOnly];
+          const combined = [...mappedOrders, ...localOnly];
+          localStorage.setItem("ran-lung-get-orders", JSON.stringify(combined));
+          return combined;
         });
       }
     } catch (e) {
@@ -388,6 +377,10 @@ function KitchenMonitor() {
   };
 
   useEffect(() => {
+    const saved = localStorage.getItem("ran-lung-get-orders");
+    if (saved) {
+      try { setOrders(JSON.parse(saved)); } catch (e) { console.error(e); }
+    }
     fetchSupabaseOrders();
 
     const ordersCh = supabase
@@ -399,7 +392,23 @@ function KitchenMonitor() {
     return () => { supabase.removeChannel(ordersCh); };
   }, []);
 
-
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === "ran-lung-get-orders" && e.newValue) {
+        try {
+          const newOrders: OrderHistory[] = JSON.parse(e.newValue);
+          setOrders((prev) => {
+            const prevIds = new Set(prev.map(o => o.id));
+            const hasNew = newOrders.some(o => !prevIds.has(o.id));
+            if (hasNew && soundEnabled) playNotificationSound();
+            return newOrders;
+          });
+        } catch (err) { console.error("Sync error:", err); }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   const triggerMockOrder = () => {
     const num = Math.floor(Math.random() * 9000) + 1000;
@@ -419,12 +428,20 @@ function KitchenMonitor() {
       tableNumber: tbs[Math.floor(Math.random() * tbs.length)],
       note: "เผ็ดปกติ"
     };
-    setOrders(prev => [newOrder, ...prev]);
+    setOrders(prev => {
+      const next = [newOrder, ...prev];
+      localStorage.setItem("ran-lung-get-orders", JSON.stringify(next));
+      return next;
+    });
     if (soundEnabled) playNotificationSound();
   };
 
   const clearMockOrders = () => {
-    setOrders(prev => prev.filter(o => !o.id.startsWith("mock_")));
+    setOrders(prev => {
+      const next = prev.filter(o => !o.id.startsWith("mock_"));
+      localStorage.setItem("ran-lung-get-orders", JSON.stringify(next));
+      return next;
+    });
   };
 
   const advanceOrderStatus = async (id: string) => {
@@ -437,6 +454,7 @@ function KitchenMonitor() {
     else if (targetOrder.status === "พร้อมเสิร์ฟ") { nextStatus = "สำเร็จ"; dbStatus = "completed"; }
     const nextList = orders.map((o) => (o.id === id ? { ...o, status: nextStatus } : o));
     setOrders(nextList);
+    localStorage.setItem("ran-lung-get-orders", JSON.stringify(nextList));
     try {
       const { error } = await supabase.from("orders").update({ status: dbStatus }).eq("id", id);
       if (error) throw error;
@@ -457,37 +475,23 @@ function KitchenMonitor() {
     else if (targetOrder.status === "สำเร็จ") { nextStatus = "พร้อมเสิร์ฟ"; dbStatus = "delivering"; }
     const nextList = orders.map((o) => (o.id === id ? { ...o, status: nextStatus } : o));
     setOrders(nextList);
+    localStorage.setItem("ran-lung-get-orders", JSON.stringify(nextList));
     try { await supabase.from("orders").update({ status: dbStatus }).eq("id", id); } catch { }
   };
 
   const cancelOrder = async (id: string) => {
     if (!confirm("คุณต้องการยกเลิกคำสั่งซื้อนี้ใช่หรือไม่?")) return;
-    const targetOrder = orders.find(o => o.id === id);
     const nextList = orders.map((o) => (o.id === id ? { ...o, status: "ยกเลิก" } : o));
     setOrders(nextList);
-    try { 
-      await supabase.from("orders").update({ status: "cancelled" }).eq("id", id);
-      // Auto-release table when no active orders remain
-      if (targetOrder?.tableNumber) {
-        const remaining = nextList.filter(o =>
-          o.tableNumber === targetOrder.tableNumber &&
-          o.id !== id &&
-          (o.status === "รอดำเนินการ" || o.status === "กำลังทำ" || o.status === "พร้อมเสิร์ฟ")
-        );
-        if (remaining.length === 0) {
-          await (supabase as any)
-            .from("restaurant_tables")
-            .update({ status: "available" })
-            .or(`label.eq.${targetOrder.tableNumber},label.eq.โต๊ะ ${targetOrder.tableNumber}`);
-        }
-      }
-    } catch { console.warn("Offline cancel completed locally."); }
+    localStorage.setItem("ran-lung-get-orders", JSON.stringify(nextList));
+    try { await supabase.from("orders").update({ status: "cancelled" }).eq("id", id); } catch { }
   };
 
   const clearCompletedOrders = () => {
     if (!confirm("คุณต้องการล้างรายการออเดอร์ที่เสร็จสิ้นออกใช่หรือไม่?")) return;
     const nextList = orders.filter(o => o.status !== "สำเร็จ" && o.status !== "ยกเลิก");
     setOrders(nextList);
+    localStorage.setItem("ran-lung-get-orders", JSON.stringify(nextList));
   };
 
   const stats = useMemo(() => {
@@ -936,11 +940,14 @@ function TableManagementView({ orders, onRefreshOrders }: { orders: OrderHistory
       if (!error && data && data.length > 0) {
         const strData = data.map((t: any) => ({ ...t, id: String(t.id) }));
         setTables(strData as any);
+        localStorage.setItem("ran-lung-get-tables", JSON.stringify(strData));
       } else {
-        setTables([]);
+        const local = localStorage.getItem("ran-lung-get-tables");
+        if (local) setTables(JSON.parse(local));
       }
     } catch {
-      setTables([]);
+      const local = localStorage.getItem("ran-lung-get-tables");
+      if (local) setTables(JSON.parse(local));
     } finally {
       setLoading(false);
     }
@@ -954,16 +961,20 @@ function TableManagementView({ orders, onRefreshOrders }: { orders: OrderHistory
         if (payload.eventType === "DELETE") {
           const deletedId = String(payload.old?.id);
           setTables(prev => {
-            return prev.filter(t => t.id !== deletedId);
+            const next = prev.filter(t => t.id !== deletedId);
+            localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
+            return next;
           });
           setSelectedTable((prev: any) => prev?.id === deletedId ? null : prev);
         } else if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
           const updated = { ...payload.new, id: String(payload.new.id) } as any;
           setTables((prev) => {
             const exists = prev.some(t => t.id === updated.id);
-            return exists
+            const next = exists
               ? prev.map(t => t.id === updated.id ? { ...t, ...updated } : t)
               : [...prev, updated];
+            localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
+            return next;
           });
         }
       })
@@ -981,6 +992,7 @@ function TableManagementView({ orders, onRefreshOrders }: { orders: OrderHistory
   const updateTableStatus = async (tableId: string, nextStatus: string) => {
     const nextList = tables.map(t => t.id === tableId ? { ...t, status: nextStatus } : t);
     setTables(nextList);
+    localStorage.setItem("ran-lung-get-tables", JSON.stringify(nextList));
     const currentSelected = nextList.find(t => t.id === tableId);
     if (currentSelected) setSelectedTable(currentSelected);
     try {
@@ -1003,7 +1015,9 @@ function TableManagementView({ orders, onRefreshOrders }: { orders: OrderHistory
       if (error) throw error;
       const newT = { ...data, id: String(data.id) };
       setTables(prev => {
-        return [...prev, newT];
+        const next = [...prev, newT];
+        localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
+        return next;
       });
       setIsAddTableOpen(false);
       setNewTableName("");
@@ -1026,7 +1040,9 @@ function TableManagementView({ orders, onRefreshOrders }: { orders: OrderHistory
       const { error } = await supabase.from("restaurant_tables").delete().eq("id", tableId);
       if (error) throw error;
       setTables(prev => {
-        return prev.filter(t => t.id !== tableId);
+        const next = prev.filter(t => t.id !== tableId);
+        localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
+        return next;
       });
       setSelectedTable(null);
     } catch (e: any) {
