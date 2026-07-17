@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { type LiffProfile, liffLogout } from "../../lib/liff";
 import { supabase } from "../../lib/supabase";
-import { syncAuthUserToSupabase, getNextQueueNumber } from "../../lib/supabase.service";
+import { syncAuthUserToSupabase } from "../../lib/supabase.service";
+import { createStripeSession, verifyStripeSession } from "../../lib/api/stripe.functions";
 import { AnimatePresence, motion } from "motion/react";
 import { useLanguage, type Language } from "../../lib/i18n";
 import {
@@ -43,6 +44,7 @@ import {
   ArrowUpDown,
   SlidersHorizontal,
   Store,
+  QrCode,
 } from "lucide-react";
 
 // Images are served from /meal (public directory)
@@ -75,6 +77,8 @@ export type MenuItem = {
   spicy?: boolean;
   options?: { id: string; name: string; choices: { id: string; label: string; price?: number }[] }[];
   addons?: Addon[];
+  isAvailable?: boolean;
+  isSpicy?: boolean;
 };
 
 const HERO_IMG = "/thai_food_hero.jpg";
@@ -341,7 +345,7 @@ type OrderHistory = {
   subtotal: number;
   delivery: number;
   total: number;
-  status: "สำเร็จ" | "กำลังจัดส่ง" | "กำลังเตรียม" | "รอรับออเดอร์" | "ขอคืนเงิน" | "ยกเลิกแล้ว" | "รอดำเนินการ" | "กำลังทำ" | "พร้อมเสิร์ฟ" | "ยกเลิก";
+  status: "สำเร็จ" | "กำลังจัดส่ง" | "กำลังเตรียม" | "รอรับออเดอร์" | "ขอคืนเงิน" | "ยกเลิกแล้ว" | "รอดำเนินการ";
   orderType?: OrderType;
   cancelReason?: string;
   cancelNote?: string;
@@ -366,49 +370,6 @@ function LiffApp() {
   const [profile, setProfile] = useState<LiffProfile | null>(null);
   const { language, setLanguage, t, tMenu } = useLanguage();
 
-  // Dynamic menu from Supabase (overrides/extends hardcoded MENU if data exists)
-  const [dbMenu, setDbMenu] = useState<MenuItem[]>([]);
-  const effectiveMenu = dbMenu.length > 0 ? dbMenu : MENU;
-
-  useEffect(() => {
-    const fetchMenu = async () => {
-      try {
-        const { data, error } = await (supabase as any)
-          .from("menu_items")
-          .select("*")
-          .eq("is_available", true)
-          .order("sort_order", { ascending: true });
-        if (!error && data && data.length > 0) {
-          const mapped: MenuItem[] = data.map((item: any) => ({
-            id: item.id,
-            name: item.name_th || item.name,
-            desc: item.description_th || item.description || "",
-            price: Number(item.price),
-            image: item.image_url || "",
-            category: item.category || "main",
-            spicy: item.is_spicy || false,
-            options: item.options || [],
-            addons: item.addons || [],
-          }));
-          setDbMenu(mapped);
-        }
-      } catch {
-        // silently fall back to hardcoded MENU
-      }
-    };
-    fetchMenu();
-
-    // Real-time menu updates
-    const menuCh = (supabase as any)
-      .channel("customer-menu-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
-        fetchMenu();
-      })
-      .subscribe();
-    return () => { (supabase as any).removeChannel(menuCh); };
-  }, []);
-
-
   // Load WebAvatar widget for customer route only
   useEffect(() => {
     // Set up ChatWidgetConfig
@@ -417,7 +378,7 @@ function LiffApp() {
       widgetId: "ran-lung-get",
       avatarUrl: "Botnoi",
       container: "#webavatar-container",
-      greetingInstruction: "สวัสดี! ฉันคือผู้ช่วยร้านลุงเกตุ คุณสามารถสั่งให้ฉันกดสั่งอาหาร ค้นหาเมนู หรือเปลี่ยนหน้าจอได้เลยค่ะ",
+      greetingInstruction: "",
       enableBubble: "true",
       cameraOffset: "0,0,0"
     };
@@ -537,87 +498,17 @@ function LiffApp() {
     };
   }, [navigate]);
 
-
-  // Load and real-time sync orders from Supabase (for logged-in user)
-  // These states must be declared BEFORE the useEffect that uses them
-  const [dbUser, setDbUser] = useState<any>(null);
-  const [dbCustomer, setDbCustomer] = useState<any>(null);
-
+  // Load orders from localStorage and listen for changes (cross-tab sync)
   useEffect(() => {
-    let channel: any = null;
-
-    const fetchUserOrders = async (authUserId?: string) => {
+    const saved = localStorage.getItem("ran-lung-get-orders");
+    if (saved) {
       try {
-        // Get current user's auth ID
-        const targetId = authUserId || dbUser?.auth_user_id;
-        
-        let query = (supabase as any)
-          .from("orders")
-          .select("*, order_items(*)")
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        if (targetId) {
-          query = query.eq("user_id", dbUser?.id || targetId);
-        }
-
-        const { data: dbOrders, error } = await query;
-        if (error || !dbOrders) return;
-
-        const mapped: OrderHistory[] = dbOrders.map((o: any) => {
-          let localStatus = "รอรับออเดอร์";
-          if (o.status === "pending") localStatus = "รอดำเนินการ";
-          else if (o.status === "preparing") localStatus = "กำลังทำ";
-          else if (o.status === "delivering") localStatus = "พร้อมเสิร์ฟ";
-          else if (o.status === "completed") localStatus = "สำเร็จ";
-          else if (o.status === "cancelled") localStatus = "ยกเลิก";
-
-          return {
-            id: o.id,
-            orderNumber: o.order_number,
-            date: new Date(o.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) + " · " + new Date(o.created_at).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-            items: (o.order_items || []).map((item: any) => ({
-              name: item.name,
-              qty: item.quantity,
-              price: Number(item.unit_price),
-              image: item.image || ""
-            })),
-            subtotal: Number(o.subtotal),
-            delivery: Number(o.delivery_fee),
-            total: Number(o.total),
-            status: localStatus,
-            orderType: o.order_type,
-            tableNumber: o.table_number || "",
-            queueNumber: o.queue_number || "",
-            note: o.special_instructions || ""
-          };
-        });
-
-        setOrderHistory(prev => {
-          // Merge: keep local-only entries (hist_xxx) that aren't in Supabase yet
-          const localOnly = prev.filter(p => p.id.startsWith("hist_"));
-          return [...mapped, ...localOnly];
-        });
+        setOrderHistory(JSON.parse(saved));
       } catch (e) {
-        console.error("Failed to load user orders:", e);
+        console.error("Failed to parse orders from storage:", e);
       }
-    };
+    }
 
-    // Then fetch from Supabase
-    fetchUserOrders();
-
-    // Real-time subscription to orders table
-    channel = supabase
-      .channel("customer-orders-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
-        fetchUserOrders();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_items" }, () => {
-        fetchUserOrders();
-      })
-      .subscribe();
-
-    // Also sync from storage events (cross-tab)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === "ran-lung-get-orders" && e.newValue) {
         try {
@@ -629,28 +520,89 @@ function LiffApp() {
       }
     };
     window.addEventListener("storage", handleStorageChange);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      if (channel) supabase.removeChannel(channel);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbUser?.id]);
-
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   const [tab, setTab] = useState<"home" | "status">("home");
-  // dbUser and dbCustomer are declared earlier (before the order history useEffect)
+  const [dbUser, setDbUser] = useState<any>(null);
+  const [dbCustomer, setDbCustomer] = useState<any>(null);
   const [overlay, setOverlay] = useState<null | "menu" | "orderConfirm" | "payment" | "history" | "contact">(null);
+  const [stripeVerifying, setStripeVerifying] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+
+  // Stripe Redirect Handler Effect
+  useEffect(() => {
+    if (!liffReady || typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const isSuccess = params.get("payment_success") === "true";
+    const sessionId = params.get("session_id");
+
+    if (isSuccess && sessionId) {
+      async function verifyAndSave() {
+        setStripeVerifying(true);
+        try {
+          console.log("[Stripe Client] Verifying checkout session:", sessionId);
+          const result = await verifyStripeSession({ data: { sessionId: sessionId as string } });
+
+          if (result.success) {
+            const pendingStr = localStorage.getItem("ran-lung-get-pending-stripe-order");
+            if (pendingStr) {
+              const pending = JSON.parse(pendingStr);
+              console.log("[Stripe Client] Pending order restored:", pending);
+              
+              // Call saveOrderToHistory with override arguments
+              saveOrderToHistory(
+                pending.cart,
+                pending.orderType,
+                pending.selectedTable,
+                pending.address
+              );
+
+              // Clear cart, remove pending order, show success flash
+              setCart([]);
+              localStorage.removeItem("ran-lung-get-pending-stripe-order");
+              setShowSuccess(true);
+              setOverlay(null);
+              setTab("status");
+
+              setTimeout(() => {
+                setShowSuccess(false);
+              }, 2000);
+            } else {
+              setStripeError("ไม่พบข้อมูลคำสั่งซื้อที่รอดำเนินการ กรุณาตรวจสอบประวัติการสั่งซื้อของคุณ (Pending order details not found)");
+            }
+          } else {
+            setStripeError(result.message || "การชำระเงินไม่ผ่านการตรวจสอบความถูกต้อง (Stripe verification failed)");
+          }
+        } catch (err: any) {
+          console.error("[Stripe Client] Error verifying Stripe session:", err);
+          setStripeError(err?.message || "ระบบไม่สามารถตรวจสอบความถูกต้องของการชำระเงินได้");
+        } finally {
+          setStripeVerifying(false);
+          // Clean parameters from URL
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, newUrl);
+        }
+      }
+      verifyAndSave();
+    } else if (params.get("payment_cancelled") === "true") {
+      setStripeError("การชำระเงินผ่าน Stripe ถูกยกเลิก");
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+    }
+  }, [liffReady]);
   const [sidebar, setSidebar] = useState(false);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(MENU);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [editingCartLine, setEditingCartLine] = useState<CartLine | null>(null);
   const selectedItemToEdit = useMemo(() => {
     if (editingCartLine) {
-      return MENU.find((m) => m.id === editingCartLine.itemId) || null;
+      return menuItems.find((m) => m.id === editingCartLine.itemId) || null;
     }
     return null;
-  }, [editingCartLine]);
+  }, [editingCartLine, menuItems]);
   const [cartDrawer, setCartDrawer] = useState(false);
   const [orderType, setOrderType] = useState<OrderType | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -726,6 +678,42 @@ function LiffApp() {
 
   // Fetch ingredients and recipes from Supabase with real-time sync
   useEffect(() => {
+    async function loadMenu() {
+      try {
+        const { data: dbItems, error } = await supabase
+          .from("menu_items")
+          .select("*")
+          .order("sort_order");
+        if (!error && dbItems && dbItems.length > 0) {
+          const mapped = dbItems.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            desc: item.description || "",
+            price: Number(item.price),
+            image: item.image_url || item.image || "",
+            category: item.category,
+            isAvailable: item.is_available ?? true,
+            isSpicy: item.is_spicy ?? false,
+            options: item.options || undefined,
+            addons: item.addons || undefined
+          }));
+          setMenuItems(mapped);
+          localStorage.setItem("ran-lung-get-menu-items", JSON.stringify(mapped));
+        } else {
+          const localMenu = localStorage.getItem("ran-lung-get-menu-items");
+          if (localMenu) {
+            setMenuItems(JSON.parse(localMenu));
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load menu from Supabase:", err);
+        const localMenu = localStorage.getItem("ran-lung-get-menu-items");
+        if (localMenu) {
+          setMenuItems(JSON.parse(localMenu));
+        }
+      }
+    }
+
     async function loadStock() {
       try {
         const { data: ingData } = await supabase.from("ingredients").select("*");
@@ -766,6 +754,7 @@ function LiffApp() {
         }
       }
     }
+    loadMenu();
     loadStock();
 
     const handleStorageChange = (e: StorageEvent) => {
@@ -776,8 +765,23 @@ function LiffApp() {
           console.error("Storage sync parse error:", err);
         }
       }
+      if (e.key === "ran-lung-get-menu-items" && e.newValue) {
+        try {
+          setMenuItems(JSON.parse(e.newValue));
+        } catch (err) {
+          console.error("Storage sync parse error:", err);
+        }
+      }
     };
     window.addEventListener("storage", handleStorageChange);
+
+    // Subscribe to menu changes
+    const chMenu = supabase
+      .channel("menu-items-realtime-customer")
+      .on("postgres_changes", { event: "*", schema: "public", table: "menu_items" }, () => {
+        loadMenu();
+      })
+      .subscribe();
 
     // Subscribe to real-time changes on ingredients
     const chIng = supabase
@@ -797,6 +801,7 @@ function LiffApp() {
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
+      supabase.removeChannel(chMenu);
       supabase.removeChannel(chIng);
       supabase.removeChannel(chRec);
     };
@@ -891,46 +896,68 @@ function LiffApp() {
   const addToCart = (line: CartLine) => setCart((c) => [...c, line]);
   const removeLine = (id: string) => setCart((c) => c.filter((l) => l.id !== id));
 
-  const saveOrderToHistory = async () => {
-    if (cart.length === 0) return;
+  const saveOrderToHistory = (
+    customCart?: CartLine[],
+    customOrderType?: OrderType,
+    customSelectedTable?: string | null,
+    customAddress?: string
+  ) => {
+    const activeCart = customCart || cart;
+    const activeOrderType = customOrderType || orderType;
+    const activeSelectedTable = customSelectedTable !== undefined ? customSelectedTable : selectedTable;
+    const activeAddress = customAddress !== undefined ? customAddress : address;
+
+    if (activeCart.length === 0) return;
     const orderNum = `#AK-${Math.floor(2848 + Math.random() * 100)}`;
-    const selectedTableObj = tables.find((t) => t.id === selectedTable);
-    const tableNumStr = orderType === "dine-in" && selectedTableObj ? selectedTableObj.label : undefined;
+    const selectedTableObj = tables.find((t) => t.id === activeSelectedTable);
+    const tableNumStr = activeOrderType === "dine-in" && selectedTableObj ? selectedTableObj.label : undefined;
 
     // Calculate queue number for takeaway
     let takeawayQueueNum: string | undefined = undefined;
-    if (orderType === "takeaway") {
-      const nextQueue = await getNextQueueNumber();
+    if (activeOrderType === "takeaway") {
+      const currentQueueCounter = localStorage.getItem("ran-lung-get-takeaway-queue-counter");
+      let nextQueue = 1;
+      if (currentQueueCounter) {
+        const parsed = parseInt(currentQueueCounter);
+        if (!isNaN(parsed)) {
+          nextQueue = parsed + 1;
+        }
+      }
+      localStorage.setItem("ran-lung-get-takeaway-queue-counter", String(nextQueue));
       takeawayQueueNum = `Q-${String(nextQueue).padStart(2, "0")}`;
     }
+
+    const activeSubtotal = activeCart.reduce((s, l) => s + l.price * l.qty, 0);
+    const activeDeliveryFee = activeOrderType === "delivery" ? 40 : 0;
 
     const newOrder: OrderHistory = {
       id: `hist_${Date.now()}`,
       orderNumber: orderNum,
       date: new Date().toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) + " · " + new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-      items: cart.map((l) => ({ name: l.name, qty: l.qty, price: l.price, image: l.image })),
-      subtotal,
-      delivery: deliveryFee,
-      total: subtotal + deliveryFee,
+      items: activeCart.map((l) => ({ name: l.name, qty: l.qty, price: l.price, image: l.image })),
+      subtotal: activeSubtotal,
+      delivery: activeDeliveryFee,
+      total: activeSubtotal + activeDeliveryFee,
       status: "รอรับออเดอร์",
-      orderType: orderType || "delivery",
+      orderType: activeOrderType || "delivery",
       tableNumber: tableNumStr,
       queueNumber: takeawayQueueNum,
     };
     const updatedHistory = [newOrder, ...orderHistory];
     setOrderHistory(updatedHistory);
+    localStorage.setItem("ran-lung-get-orders", JSON.stringify(updatedHistory));
     setActiveOrderNumber(orderNum);
     setHasActiveOrder(true);
 
-    if (orderType === "dine-in" && selectedTable) {
+    if (activeOrderType === "dine-in" && activeSelectedTable) {
       setTables((prev) =>
-        prev.map((t) => (t.id === selectedTable ? { ...t, status: "occupied" } : t))
+        prev.map((t) => (t.id === activeSelectedTable ? { ...t, status: "occupied" } : t))
       );
       // Update table status in Supabase to occupied
       void (supabase as any)
         .from("restaurant_tables")
         .update({ status: "occupied" })
-        .eq("id", selectedTable);
+        .eq("id", activeSelectedTable);
     }
 
     // Push order to Supabase for real-time Staff Dashboard
@@ -965,13 +992,13 @@ function LiffApp() {
         user_id: finalUserId,
         customer_id: finalCustomerId,
         line_user_id: profile?.userId || null,
-        order_type: orderType || "delivery",
+        order_type: activeOrderType || "delivery",
         status: "pending",
-        subtotal: subtotal,
-        delivery_fee: deliveryFee,
-        total: subtotal + deliveryFee,
+        subtotal: activeSubtotal,
+        delivery_fee: activeDeliveryFee,
+        total: activeSubtotal + activeDeliveryFee,
         table_number: tableNumStr || null,
-        delivery_address: orderType === "delivery" ? address : null,
+        delivery_address: activeOrderType === "delivery" ? activeAddress : null,
         special_instructions: null,
         created_at: new Date().toISOString()
       });
@@ -1083,6 +1110,7 @@ function LiffApp() {
             >
               {tab === "home" && (
                 <HomeScreen
+                  menuItems={menuItems}
                   onOpenSidebar={() => setSidebar(true)}
                   orderType={orderType}
                   isCurrentlyClosed={isCurrentlyClosed}
@@ -1101,6 +1129,7 @@ function LiffApp() {
                   tables={tables}
                   onOpenTablePicker={() => setShowTablePicker(true)}
                   activeOrderType={orderHistory.find((o) => o.orderNumber === activeOrderNumber)?.orderType}
+                  activeOrderStatus={orderHistory.find((o) => o.orderNumber === activeOrderNumber)?.status}
                   address={address}
                   setAddress={setAddress}
                   addressType={addressType}
@@ -1111,7 +1140,6 @@ function LiffApp() {
                   setShowAddressError={setShowAddressError}
                   showTypeError={showTypeError}
                   setShowTypeError={setShowTypeError}
-                  menuItems={effectiveMenu}
                 />
               )}
               {tab === "status" && (
@@ -1153,12 +1181,12 @@ function LiffApp() {
           {overlay === "menu" && (
             <MenuOverlay
               key="menu"
+              menuItems={menuItems}
               onBack={() => setOverlay(null)}
               onPickItem={(it) => setSelectedItem(it)}
               onOpenCart={() => setCartDrawer(true)}
               totalQty={totalQty}
               subtotal={subtotal}
-              items={effectiveMenu}
             />
           )}
           {overlay === "orderConfirm" && (
@@ -1177,9 +1205,15 @@ function LiffApp() {
             <PaymentOverlay
               key="pay"
               total={subtotal + deliveryFee}
+              cart={cart}
+              orderType={orderType || "delivery"}
+              deliveryFee={deliveryFee}
+              subtotal={subtotal}
+              selectedTable={selectedTable}
+              address={address}
               onBack={() => setOverlay("orderConfirm")}
-              onSuccess={async () => {
-                await saveOrderToHistory();
+              onSuccess={() => {
+                saveOrderToHistory();
                 setShowSuccess(true);
                 setTimeout(() => {
                   setShowSuccess(false);
@@ -1365,7 +1399,7 @@ function LiffApp() {
         {/* WebAvatar container positioned in the bottom-right corner of the main app frame */}
         <div
           id="webavatar-container"
-          className="absolute bottom-6 right-4 z-40 transition-opacity duration-300 opacity-100 pointer-events-auto"
+          className={`absolute bottom-6 right-4 z-40 transition-opacity duration-300 ${tab === "home" ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
           style={{
             width: "100px",
             height: "100px",
@@ -1612,6 +1646,7 @@ function FlagIcon({ lang }: { lang: string }) {
 }
 
 function HomeScreen({
+  menuItems,
   onOpenSidebar,
   orderType,
   setOrderType,
@@ -1628,6 +1663,7 @@ function HomeScreen({
   tables,
   onOpenTablePicker,
   activeOrderType,
+  activeOrderStatus,
   address,
   setAddress,
   addressType,
@@ -1640,8 +1676,8 @@ function HomeScreen({
   setShowTypeError,
   isCurrentlyClosed,
   bypassRealClosed,
-  menuItems,
 }: {
+  menuItems: MenuItem[];
   onOpenSidebar: () => void;
   orderType: OrderType | null;
   setOrderType: (m: OrderType | null) => void;
@@ -1658,6 +1694,7 @@ function HomeScreen({
   tables: { id: string; label: string; status: string }[];
   onOpenTablePicker: () => void;
   activeOrderType?: OrderType;
+  activeOrderStatus?: string;
   address: string;
   setAddress: (val: string) => void;
   addressType: "home" | "work" | "dorm";
@@ -1670,9 +1707,7 @@ function HomeScreen({
   setShowTypeError: (val: boolean) => void;
   isCurrentlyClosed: boolean;
   bypassRealClosed: boolean;
-  menuItems?: MenuItem[];
 }) {
-  const effectiveHomeItems = menuItems && menuItems.length > 0 ? menuItems : MENU;
   const { language, setLanguage, t, tMenu } = useLanguage();
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1858,6 +1893,7 @@ function HomeScreen({
               orderNumber={activeOrderNumber}
               onGoToStatus={onGoToStatus}
               orderType={activeOrderType || "delivery"}
+              status={activeOrderStatus}
             />
           </motion.div>
         )}
@@ -2002,7 +2038,7 @@ function HomeScreen({
           </button>
           <div ref={scrollRef} className="-mx-5 px-10 overflow-x-auto no-scrollbar scroll-smooth">
             <div className="flex gap-4">
-              {effectiveHomeItems.filter((m) => m.category !== "drinks" && m.category !== "dessert").map((m, i) => (
+              {menuItems.filter((m) => m.category !== "drinks" && m.category !== "dessert").map((m, i) => (
                 <motion.div
                   key={m.id}
                   initial={{ opacity: 0, y: 12 }}
@@ -2273,6 +2309,7 @@ function ItemModal({
   checkOptionOutOfStock: (optionId: string) => boolean;
   cartLine?: CartLine;
 }) {
+  const { language, t, tMenu } = useLanguage();
   const [qty, setQty] = useState(cartLine ? cartLine.qty : 1);
   const [options, setOptions] = useState<Record<string, string>>(() => {
     if (cartLine) {
@@ -2371,28 +2408,32 @@ function ItemModal({
 
   // Custom formatted dish name for cart
   const formattedName = useMemo(() => {
-    if (!isFood) return item.name;
+    if (!isFood) return tMenu(item.name, "name");
 
-    let name = item.name;
+    let name = tMenu(item.name, "name");
     const defaultProtein = PROTEINS.find((p) => p.id === defaultProteinId);
     const proteinItem = PROTEINS.find((p) => p.id === protein);
 
     if (defaultProtein && proteinItem && defaultProtein.id !== proteinItem.id) {
-      const newProteinName = proteinItem.name === "ไม่เอาเนื้อสัตว์" ? "" : proteinItem.name;
-      if (name.includes(defaultProtein.name)) {
-        name = name.replace(defaultProtein.name, newProteinName);
+      const newProteinName = proteinItem.name === "ไม่เอาเนื้อสัตว์" ? "" : t(proteinItem.name);
+      const defaultProteinNameTranslated = t(defaultProtein.name);
+      if (name.includes(defaultProteinNameTranslated)) {
+        name = name.replace(defaultProteinNameTranslated, newProteinName);
       } else {
-        name = `${name} ${newProteinName}`;
+        name = name.trim() + " " + newProteinName;
       }
     }
 
     const sizeItem = SIZES.find((s) => s.id === size);
-    if (sizeItem && sizeItem.id === "s_special" && !name.includes("(พิเศษ)")) {
-      name += " (พิเศษ)";
+    if (sizeItem && sizeItem.id === "s_special") {
+      const specialLabel = ` (${t("พิเศษ")})`;
+      if (!name.includes(specialLabel)) {
+        name += specialLabel;
+      }
     }
 
     return name;
-  }, [item.name, isFood, defaultProteinId, protein, size]);
+  }, [item.name, isFood, defaultProteinId, protein, size, t, tMenu]);
 
   const handleAdd = () => {
     if (!isFood) {
@@ -2457,11 +2498,11 @@ function ItemModal({
         <div className="px-5 pt-5 pb-4 border-b" style={{ borderColor: "#f1ece4" }}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">ปรับแต่ง</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">{t("ระบุความต้องการพิเศษ")}</p>
               <h2 className="text-2xl font-bold truncate" style={{ color: BRAND }}>
                 {formattedName}
               </h2>
-              <p className="mt-2 text-sm text-slate-600">{item.desc}</p>
+              <p className="mt-2 text-sm text-slate-600">{tMenu(item.desc, "desc")}</p>
               <p className="mt-3 text-xl font-bold" style={{ color: BRAND }}>
                 ฿{unitPrice}
               </p>
@@ -2481,10 +2522,10 @@ function ItemModal({
             <div key={g.id} className="mt-6">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-semibold" style={{ color: BRAND }}>
-                  {g.name}
+                  {t(g.name)}
                 </h3>
                 <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: "#fff2d6", color: BRAND }}>
-                  จำเป็น
+                  {t("จำเป็น")}
                 </span>
               </div>
               <div className="space-y-2">
@@ -2493,7 +2534,7 @@ function ItemModal({
                   return (
                     <button
                       key={c.id}
-                      aria-label={`เลือก ${c.label}`}
+                      aria-label={`เลือก ${t(c.label)}`}
                       onClick={() => setOptions({ ...options, [g.id]: c.id })}
                       className="w-full flex items-center justify-between rounded-xl border px-4 py-3 text-left"
                       style={{
@@ -2502,7 +2543,7 @@ function ItemModal({
                       }}
                     >
                       <span className="text-sm font-medium" style={{ color: BRAND }}>
-                        {c.label}
+                        {t(c.label)}
                       </span>
                       <span
                         className="grid h-5 w-5 place-items-center rounded-full border-2"
@@ -2523,10 +2564,10 @@ function ItemModal({
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-2.5">
                   <h3 className="font-semibold text-sm flex items-center gap-1.5" style={{ color: BRAND }}>
-                    🥩 เลือกวัตถุดิบหลัก
+                    🥩 {t("เลือกเนื้อสัตว์")}
                   </h3>
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: "#fff2d6", color: BRAND }}>
-                    จำเป็น
+                    {t("จำเป็น")}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -2537,7 +2578,7 @@ function ItemModal({
                       <button
                         key={p.id}
                         disabled={isOutOfStock}
-                        aria-label={`เลือกวัตถุดิบ ${p.name}`}
+                        aria-label={`เลือกวัตถุดิบ ${t(p.name)}`}
                         onClick={() => setProtein(p.id)}
                         className="flex items-center justify-between rounded-xl border p-3 text-left transition duration-150 relative overflow-hidden"
                         style={{
@@ -2548,10 +2589,10 @@ function ItemModal({
                         }}
                       >
                         <span className={`text-xs font-semibold ${isOutOfStock ? "line-through text-slate-400" : ""}`} style={{ color: isOutOfStock ? undefined : BRAND }}>
-                          {p.name} {isOutOfStock && "(หมด)"}
+                          {t(p.name)} {isOutOfStock && `(${t("หมด")})`}
                         </span>
                         <span className="text-[11px] font-bold" style={{ color: active ? BRAND : INK_MUTED }}>
-                          {isOutOfStock ? "" : p.price > 0 ? `+${p.price} ฿` : "ฟรี"}
+                          {isOutOfStock ? "" : p.price > 0 ? `+${p.price} ฿` : t("ฟรี")}
                         </span>
                       </button>
                     );
@@ -2562,7 +2603,7 @@ function ItemModal({
               {/* Choose Size */}
               <div className="mt-6">
                 <h3 className="font-semibold text-sm flex items-center gap-1.5 mb-2.5" style={{ color: BRAND }}>
-                  ⚖️ เลือกขนาด
+                  ⚖️ {t("ขนาด")}
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   {SIZES.map((s) => {
@@ -2570,7 +2611,7 @@ function ItemModal({
                     return (
                       <button
                         key={s.id}
-                        aria-label={`เลือกขนาด ${s.name}`}
+                        aria-label={`เลือกขนาด ${t(s.name)}`}
                         onClick={() => setSize(s.id)}
                         className="flex items-center justify-between rounded-xl border px-4 py-3 text-left transition duration-150"
                         style={{
@@ -2579,10 +2620,10 @@ function ItemModal({
                         }}
                       >
                         <span className="text-xs font-semibold" style={{ color: BRAND }}>
-                          {s.name}
+                          {t(s.name)}
                         </span>
                         <span className="text-[11px] font-bold" style={{ color: BRAND }}>
-                          {s.price > 0 ? `+${s.price} ฿` : "ฟรี"}
+                          {s.price > 0 ? `+${s.price} ฿` : t("ฟรี")}
                         </span>
                       </button>
                     );
@@ -2593,20 +2634,20 @@ function ItemModal({
               {/* Choose Toppings */}
               <div className="mt-6">
                 <h3 className="font-semibold text-sm flex items-center gap-1.5 mb-2.5" style={{ color: BRAND }}>
-                  🥚 ท็อปปิ้งเพิ่มเติม (เลือกได้หลายรายการ)
+                  🥚 {t("เลือกท็อปปิ้งเพิ่มเติม")}
                 </h3>
                 <div className="grid grid-cols-2 gap-2">
-                  {TOPPINGS.map((t) => {
-                    const active = selectedToppings.includes(t.id);
-                    const isOutOfStock = checkOptionOutOfStock(t.id);
+                  {TOPPINGS.map((topping) => {
+                    const active = selectedToppings.includes(topping.id);
+                    const isOutOfStock = checkOptionOutOfStock(topping.id);
                     return (
                       <button
-                        key={t.id}
+                        key={topping.id}
                         disabled={isOutOfStock}
-                        aria-label={`เลือกท็อปปิ้ง ${t.name}`}
+                        aria-label={`เลือกท็อปปิ้ง ${t(topping.name)}`}
                         onClick={() =>
                           setSelectedToppings((prev) =>
-                            active ? prev.filter((id) => id !== t.id) : [...prev, t.id]
+                            active ? prev.filter((id) => id !== topping.id) : [...prev, topping.id]
                           )
                         }
                         className="flex items-center justify-between rounded-xl border p-3 text-left transition duration-150 relative overflow-hidden"
@@ -2628,11 +2669,11 @@ function ItemModal({
                             {active && <Check size={10} color={GOLD} strokeWidth={4} />}
                           </span>
                           <span className={`text-xs font-medium ${isOutOfStock ? "line-through text-slate-400" : ""}`} style={{ color: isOutOfStock ? undefined : BRAND }}>
-                            {t.name} {isOutOfStock && "(หมด)"}
+                            {t(topping.name)} {isOutOfStock && `(${t("หมด")})`}
                           </span>
                         </span>
                         <span className="text-[11px] font-bold" style={{ color: BRAND }}>
-                          {isOutOfStock ? "" : `+${t.price} ฿`}
+                          {isOutOfStock ? "" : `+${topping.price} ฿`}
                         </span>
                       </button>
                     );
@@ -2644,7 +2685,7 @@ function ItemModal({
             item.addons && item.addons.length > 0 && (
               <div className="mt-6">
                 <h3 className="font-semibold mb-2" style={{ color: BRAND }}>
-                  เพิ่มเติม
+                  {t("เพิ่มเติม")}
                 </h3>
                 <div className="space-y-2">
                   {item.addons.map((a) => {
@@ -2755,16 +2796,16 @@ function MenuOverlay({
   onOpenCart,
   totalQty,
   subtotal,
-  items: menuItems,
+  menuItems,
 }: {
   onBack: () => void;
   onPickItem: (m: MenuItem) => void;
   onOpenCart: () => void;
   totalQty: number;
   subtotal: number;
-  items?: MenuItem[];
+  menuItems: MenuItem[];
 }) {
-  const effectiveItems = menuItems && menuItems.length > 0 ? menuItems : MENU;
+  const { language, t, tMenu } = useLanguage();
   const [activeCat, setActiveCat] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("default");
@@ -2780,10 +2821,10 @@ function MenuOverlay({
   // Filter and sort items dynamically
   const filteredAndSortedItems = useMemo(() => {
     let list = activeCat === "all"
-      ? effectiveItems.filter((m) => m.category === "signature")
+      ? menuItems.filter((m) => m.category === "signature")
       : activeCat === "signature"
-        ? effectiveItems.filter((m) => m.category !== "drinks" && m.category !== "dessert")
-        : effectiveItems.filter((m) => m.category === activeCat);
+        ? menuItems.filter((m) => m.category !== "drinks" && m.category !== "dessert")
+        : menuItems.filter((m) => m.category === activeCat);
 
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
@@ -2801,7 +2842,7 @@ function MenuOverlay({
     }
 
     return list;
-  }, [activeCat, searchQuery, sortBy, effectiveItems]);
+  }, [activeCat, searchQuery, sortBy, menuItems]);
 
 
   return (
@@ -2822,7 +2863,7 @@ function MenuOverlay({
             <ChevronLeft size={20} />
           </button>
           <h1 className="text-lg font-bold text-center flex-1" style={{ color: BRAND }}>
-            รายการเมนู
+            {t("รายการเมนู")}
           </h1>
           <button
             onClick={onOpenCart}
@@ -2845,7 +2886,7 @@ function MenuOverlay({
             <Search size={16} className="text-slate-400" />
             <input
               aria-label="ค้นหาเมนู"
-              placeholder="ค้นหาเมนู..."
+              placeholder={t("ค้นหาเมนู...")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
@@ -2895,7 +2936,7 @@ function MenuOverlay({
                     style={{ background: BRAND }}
                   />
                 )}
-                <span className="relative">{cat.label}</span>
+                <span className="relative">{t(cat.label)}</span>
               </button>
             );
           })}
@@ -2919,12 +2960,12 @@ function MenuOverlay({
           ) : (
             filteredAndSortedItems.map((m) => (
               <div key={m.id} className="w-full bg-white rounded-2xl p-3 shadow-soft flex items-start gap-3">
-                <img src={encodeURI(String(m.image))} alt={m.name} className="h-20 w-20 rounded-xl object-cover flex-shrink-0" />
+                <img src={encodeURI(String(m.image))} alt={tMenu(m.name, "name")} className="h-20 w-20 rounded-xl object-cover flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div>
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-sm truncate" style={{ color: BRAND }}>{m.name}</h3>
-                      <p className="text-xs mt-1 text-slate-500 whitespace-normal">{m.desc}</p>
+                      <h3 className="font-semibold text-sm truncate" style={{ color: BRAND }}>{tMenu(m.name, "name")}</h3>
+                      <p className="text-xs mt-1 text-slate-500 whitespace-normal">{tMenu(m.desc, "desc")}</p>
                     </div>
                     <div className="mt-3 flex items-center justify-between">
                       <span className="font-bold text-lg" style={{ color: "#a16207" }}>฿{m.price}</span>
@@ -2971,7 +3012,7 @@ function MenuOverlay({
                     {totalQty}
                   </span>
                 </div>
-                <span className="font-medium">ดูตะกร้าสินค้า</span>
+                <span className="font-medium">{t("ดูตะกร้าสินค้า")}</span>
               </div>
               <span className="font-bold text-lg" style={{ color: GOLD }}>
                 ฿{subtotal}
@@ -3006,10 +3047,10 @@ function MenuOverlay({
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-bold flex items-center gap-1.5" style={{ color: BRAND }}>
                     <SlidersHorizontal size={16} />
-                    <span>เรียงลำดับตาม</span>
+                    <span>{t("เรียงลำดับตาม")}</span>
                   </h2>
                   <button onClick={() => setShowSortModal(false)} className="text-sm font-semibold" style={{ color: INK_MUTED }}>
-                    เสร็จสิ้น
+                    {t("เสร็จสิ้นการเลือก")}
                   </button>
                 </div>
               </div>
@@ -3035,8 +3076,8 @@ function MenuOverlay({
                       }}
                     >
                       <div>
-                        <p className="font-semibold text-sm" style={{ color: BRAND }}>{opt.label}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">{opt.desc}</p>
+                        <p className="font-semibold text-sm" style={{ color: BRAND }}>{t(opt.label)}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{t(opt.desc)}</p>
                       </div>
                       <div
                         className="h-5 w-5 rounded-full border-2 flex items-center justify-center transition"
@@ -3306,10 +3347,13 @@ function OrderConfirmOverlay({
             }
             onProceed();
           }}
-          className="w-full h-12 rounded-full font-semibold flex items-center justify-center gap-2"
-          style={{ background: BRAND, color: "white" }}
+          className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+          style={{
+            background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
+          }}
         >
-          <CreditCard size={16} /> ไปยังช่องทางชำระเงิน · ฿{grand}
+          <CreditCard size={18} />
+          <span>ชำระผ่าน Stripe · ฿{grand.toLocaleString()}</span>
         </button>
       </div>
     </motion.div>
@@ -3332,29 +3376,69 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 // ─────────────────────────────────────────────────────────────
 function PaymentOverlay({
   total,
+  cart,
+  orderType,
+  deliveryFee,
+  subtotal,
+  selectedTable,
+  address,
   onBack,
   onSuccess,
 }: {
   total: number;
+  cart: CartLine[];
+  orderType: OrderType;
+  deliveryFee: number;
+  subtotal: number;
+  selectedTable: string;
+  address: string;
   onBack: () => void;
   onSuccess: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const [slip, setSlip] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const PROMPTPAY = "089-123-4567";
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeErrorMsg, setStripeErrorMsg] = useState<string | null>(null);
 
-  const handleCopy = () => {
-    navigator.clipboard?.writeText(PROMPTPAY).catch(() => { });
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const handleStripeCheckout = async () => {
+    setStripeLoading(true);
+    setStripeErrorMsg(null);
+    try {
+      // 1. Save state to localStorage so we can restore it on redirect back
+      const pendingOrder = {
+        cart,
+        orderType,
+        selectedTable,
+        address,
+      };
+      localStorage.setItem("ran-lung-get-pending-stripe-order", JSON.stringify(pendingOrder));
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    setSlip(url);
+      // 2. Call server function to create checkout session
+      const origin = window.location.origin;
+      const result = await createStripeSession({
+        data: {
+          cart: cart.map(l => ({
+            name: l.name,
+            price: l.price,
+            qty: l.qty,
+            image: l.image || null,
+          })),
+          subtotal,
+          deliveryFee,
+          orderType,
+          origin,
+        }
+      });
+
+      if (result.url) {
+        // 3. Redirect to Stripe Checkout or mock Sandbox page
+        window.location.href = result.url;
+      } else {
+        throw new Error("ไม่สามารถสร้าง URL สำหรับการชำระเงินได้");
+      }
+    } catch (err: any) {
+      console.error("[Stripe] Checkout error:", err);
+      setStripeErrorMsg(err?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อกับ Stripe");
+      setStripeLoading(false);
+    }
   };
 
   return (
@@ -3365,118 +3449,102 @@ function PaymentOverlay({
       transition={{ type: "tween", duration: 0.3 }}
       className="absolute inset-0 z-50 bg-[var(--surface)] overflow-y-auto no-scrollbar pb-32"
     >
-      <div className="px-5 pt-5 pb-6" style={{ background: BRAND, color: "white" }}>
+      {/* Header */}
+      <div className="px-5 pt-5 pb-6 mb-6" style={{ background: BRAND, color: "white" }}>
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15"
+            className="grid h-10 w-10 place-items-center rounded-full bg-white/10 border border-white/15 cursor-pointer"
           >
             <ChevronLeft size={20} color={GOLD} />
           </button>
-          <h1 className="text-lg font-bold">ชำระค่าอาหารผ่านพร้อมเพย์</h1>
+          <h1 className="text-lg font-bold">ชำระเงินค่าอาหาร</h1>
         </div>
       </div>
 
-      <div className="px-5 -mt-3 space-y-4">
-        <div className="bg-white rounded-2xl p-6 shadow-soft flex flex-col items-center">
-          <div className="px-3 py-1 rounded-md text-[10px] font-bold tracking-widest" style={{ background: "#003d6b", color: "white" }}>
-            PROMPTPAY
+      <div className="px-5 space-y-4">
+        {/* Stripe Content */}
+        <div className="bg-white rounded-3xl p-5 shadow-soft border border-slate-50 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <span className="text-sm font-bold text-slate-800">สรุปรายการสั่งซื้อ</span>
+            <span className="text-xs text-slate-400 font-medium">({cart.length} รายการ)</span>
           </div>
-          <div className="mt-4 rounded-2xl p-3 bg-white border-2" style={{ borderColor: "#f1ece4" }}>
-            <MockQR />
-          </div>
-          <p className="mt-3 text-xs" style={{ color: INK_MUTED }}>
-            ยอดที่ต้องชำระ
-          </p>
-          <p className="text-3xl font-bold" style={{ color: BRAND }}>
-            ฿{total.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 shadow-soft">
-          <p className="text-xs" style={{ color: INK_MUTED }}>
-            หมายเลขพร้อมเพย์
-          </p>
-          <div className="mt-2 flex items-center justify-between gap-3">
-            <p className="text-lg font-bold tracking-wide" style={{ color: BRAND }}>
-              {PROMPTPAY}
-            </p>
-            <AnimatePresence mode="wait">
-              {copied ? (
-                <motion.button
-                  key="ok"
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
-                  style={{ background: "#dcfce7", color: "#16a34a" }}
-                >
-                  <Check size={14} /> คัดลอกแล้ว
-                </motion.button>
-              ) : (
-                <motion.button
-                  key="copy"
-                  initial={{ scale: 0.9, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.9, opacity: 0 }}
-                  onClick={handleCopy}
-                  className="flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold"
-                  style={{ background: "#fff2d6", color: BRAND }}
-                >
-                  <Copy size={14} /> คัดลอก
-                </motion.button>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <div>
-          <p className="text-sm font-semibold mb-2" style={{ color: BRAND }}>
-            แนบหลักฐานการโอน
-          </p>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="relative w-full rounded-2xl border-2 border-dashed overflow-hidden"
-            style={{
-              borderColor: slip ? "transparent" : "#cbd5d8",
-              background: slip ? "#000" : "white",
-              minHeight: 200,
-            }}
-          >
-            {slip ? (
-              <>
-                <img src={slip} alt="slip" className="w-full h-56 object-contain" />
-                <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
-                  <span className="text-xs font-semibold text-white">เปลี่ยนไฟล์</span>
-                </div>
-              </>
-            ) : (
-              <div className="py-12 flex flex-col items-center gap-2">
-                <div className="grid h-12 w-12 place-items-center rounded-full" style={{ background: "#fff2d6" }}>
-                  <Upload size={20} color={BRAND} />
-                </div>
-                <p className="text-sm font-medium" style={{ color: BRAND }}>
-                  แตะเพื่ออัปโหลดสลิป
-                </p>
-                <p className="text-xs" style={{ color: INK_MUTED }}>
-                  JPG / PNG ไม่เกิน 5MB
-                </p>
+          
+          <div className="space-y-2 text-sm text-slate-600">
+            <div className="flex justify-between">
+              <span>ค่าอาหาร (Subtotal)</span>
+              <span>฿{subtotal.toLocaleString()}</span>
+            </div>
+            {deliveryFee > 0 && (
+              <div className="flex justify-between">
+                <span>ค่าจัดส่ง (Delivery Fee)</span>
+                <span>฿{deliveryFee.toLocaleString()}</span>
               </div>
             )}
-          </button>
+            <div className="flex justify-between pt-3 border-t border-slate-100 font-bold text-slate-800 text-base">
+              <span>ยอดชำระทั้งหมด</span>
+              <span style={{ color: BRAND }}>฿{total.toLocaleString()}</span>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div className="px-5 pb-8">
-        <div className="mt-4">
+        {/* Information Card */}
+        <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200/50 flex gap-3 text-xs text-amber-800 leading-relaxed shadow-sm">
+          <span className="text-lg">💡</span>
+          <div>
+            <p className="font-bold mb-0.5">ระบบชำระเงิน Stripe (โอนเงิน/บัตรเครดิต)</p>
+            <p className="text-amber-700">ชำระได้ทั้ง PromptPay QR Code และ บัตรเครดิต ผ่านแพลตฟอร์ม Stripe ที่ปลอดภัยระดับมาตรฐานสากล</p>
+            <p className="mt-1.5 text-[10px] text-amber-600 italic">หมายเหตุ: หากผู้พัฒนายังไม่ได้ใส่กุญแจ Stripe ลับในระบบ ระบบจะทำงานใน sandbox mode อัตโนมัติ เพื่อให้จำลองความสำเร็จได้ทันที</p>
+          </div>
+        </div>
+
+        {/* Stripe Badges */}
+        <div className="flex flex-col items-center justify-center py-4 bg-white rounded-3xl border border-slate-100 shadow-soft gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold">
+            <span>Secured by</span>
+            <span className="text-[#635bff] font-extrabold tracking-tight text-sm">stripe</span>
+          </div>
+          <div className="flex items-center gap-3 opacity-60">
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">VISA</span>
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">MASTERCARD</span>
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">JCB</span>
+            <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-500">PROMPTPAY</span>
+          </div>
+        </div>
+
+        {stripeErrorMsg && (
+          <div className="bg-red-50 rounded-xl p-3 border border-red-200 text-xs text-red-700 text-center">
+            {stripeErrorMsg}
+          </div>
+        )}
+
+        {/* Pay Button */}
+        <div className="pb-8">
           <button
-            onClick={onSuccess}
-            disabled={!slip}
-            className="w-full h-12 rounded-full font-semibold disabled:opacity-50"
-            style={{ background: BRAND, color: "white" }}
+            onClick={handleStripeCheckout}
+            disabled={stripeLoading}
+            className="w-full h-14 rounded-full font-bold text-white shadow-lift active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
+            style={{
+              background: "linear-gradient(135deg, #635bff 0%, #8073ea 100%)",
+            }}
           >
-            ยืนยันการชำระเงินเรียบร้อย
+            {stripeLoading ? (
+              <div
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: "50%",
+                  border: "2px solid rgba(255,255,255,0.2)",
+                  borderTopColor: "white",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+            ) : (
+              <>
+                <CreditCard size={18} />
+                <span>ชำระผ่าน Stripe ฿{total.toLocaleString()}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -3515,6 +3583,72 @@ function MockQR() {
       <Corner x={size - c * 7} y={0} />
       <Corner x={0} y={size - c * 7} />
     </svg>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Stripe Helpers
+// ─────────────────────────────────────────────────────────────
+function StripeVerifyingFlash() {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[60] flex items-center justify-center"
+      style={{ background: BRAND }}
+    >
+      <div className="flex flex-col items-center gap-4">
+        <div
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: "50%",
+            border: "4px solid rgba(255,255,255,0.1)",
+            borderTopColor: GOLD,
+            animation: "spin 0.8s linear infinite",
+          }}
+        />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <p className="text-white font-bold text-lg">
+          กำลังตรวจสอบการชำระเงินผ่าน Stripe...
+        </p>
+        <p className="text-white/60 text-sm">
+          กรุณาอย่าปิดหน้านี้
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function StripeErrorOverlay({ error, onClose }: { error: string; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="absolute inset-0 z-[60] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm"
+    >
+      <motion.div
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        exit={{ scale: 0.9, y: 20 }}
+        className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border border-red-100"
+      >
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-red-50 text-red-500 mb-4">
+          <X size={32} />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">การชำระเงินไม่สำเร็จ</h3>
+        <p className="text-sm text-slate-500 mb-6 leading-relaxed">{error}</p>
+        <button
+          onClick={onClose}
+          className="w-full h-12 rounded-full font-semibold text-white transition-all shadow-md active:scale-[0.98]"
+          style={{ background: BRAND }}
+        >
+          ตกลง
+        </button>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -3569,52 +3703,25 @@ function StatusScreen({
   const [errorText, setErrorText] = useState("");
 
   const orderType = activeOrder?.orderType || "delivery";
-  const currentStatus = activeOrder?.status || "รอดำเนินการ";
-
-  // Status steps mapped to DB values (pending→รอดำเนินการ, preparing→กำลังทำ, delivering→พร้อมเสิร์ฟ, completed→สำเร็จ)
-  const isPending   = currentStatus === "รอดำเนินการ" || currentStatus === "รอรับออเดอร์";
-  const isPreparing = currentStatus === "กำลังทำ";
-  const isReady     = currentStatus === "พร้อมเสิร์ฟ";
-  const isDone      = currentStatus === "สำเร็จ";
-  const isCancelled = currentStatus === "ยกเลิก" || currentStatus === "ยกเลิกแล้ว";
+  const currentStatus = activeOrder?.status || "รอรับออเดอร์";
 
   const steps = orderType === "dine-in"
     ? [
-      { id: 1, label: "รับออเดอร์", icon: Check,
-        done: isPreparing || isReady || isDone,
-        active: isPending },
-      { id: 2, label: "กำลังทำอาหาร", icon: ChefHat,
-        done: isReady || isDone,
-        active: isPreparing },
-      { id: 3, label: "เสร็จสิ้น / เสิร์ฟแล้ว", icon: PartyPopper,
-        done: isDone,
-        active: isReady },
+      { id: 1, label: "รับออเดอร์", icon: Check, done: currentStatus !== "รอรับออเดอร์", active: currentStatus === "รอรับออเดอร์" },
+      { id: 2, label: "กำลังทำอาหาร", icon: ChefHat, done: currentStatus === "สำเร็จ", active: currentStatus === "กำลังเตรียม" },
+      { id: 3, label: "เสร็จสิ้น", icon: PartyPopper, done: currentStatus === "สำเร็จ", active: false },
     ]
     : orderType === "takeaway"
       ? [
-        { id: 1, label: "รับออเดอร์", icon: Check,
-          done: isPreparing || isReady || isDone,
-          active: isPending },
-        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat,
-          done: isReady || isDone,
-          active: isPreparing },
-        { id: 3, label: "พร้อมรับอาหาร", icon: ShoppingBag,
-          done: isDone,
-          active: isReady },
+        { id: 1, label: "รับออเดอร์", icon: Check, done: currentStatus !== "รอรับออเดอร์", active: currentStatus === "รอรับออเดอร์" },
+        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat, done: currentStatus === "สำเร็จ", active: currentStatus === "กำลังเตรียม" },
+        { id: 3, label: "พร้อมรับอาหาร", icon: ShoppingBag, done: currentStatus === "สำเร็จ", active: false },
       ]
       : [
-        { id: 1, label: "รับออเดอร์", icon: Check,
-          done: isPreparing || isReady || isDone,
-          active: isPending },
-        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat,
-          done: isReady || isDone,
-          active: isPreparing },
-        { id: 3, label: "คนรับอาหาร/กำลังขับไป", icon: Bike,
-          done: isDone,
-          active: isReady },
-        { id: 4, label: "เสร็จสิ้น", icon: PartyPopper,
-          done: isDone,
-          active: false },
+        { id: 1, label: "รับออเดอร์", icon: Check, done: currentStatus !== "รอรับออเดอร์", active: currentStatus === "รอรับออเดอร์" },
+        { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat, done: currentStatus === "กำลังจัดส่ง" || currentStatus === "สำเร็จ", active: currentStatus === "กำลังเตรียม" },
+        { id: 3, label: "คนรับอาหาร/กำลังขับไป", icon: Bike, done: currentStatus === "สำเร็จ", active: currentStatus === "กำลังจัดส่ง" },
+        { id: 4, label: "เสร็จสิ้น", icon: PartyPopper, done: currentStatus === "สำเร็จ", active: false },
       ];
 
   const orderItems = activeOrder
@@ -3631,56 +3738,40 @@ function StatusScreen({
       return {
         title: "ยื่นขอคืนเงินแล้ว",
         subtitle: "ร้านค้ากำลังตรวจสอบและโอนเงินคืนตามพร้อมเพย์ที่ท่านระบุ",
-        color: "#f59e0b",
+        color: "#f59e0b", // Amber
         bg: "rgba(245, 158, 11, 0.08)",
         iconColor: "#f59e0b"
       };
     }
-    if (isCancelled) {
+    if (currentStatus === "ยกเลิกแล้ว") {
       return {
         title: "ออเดอร์ถูกยกเลิกแล้ว",
         subtitle: "การคืนเงินสำเร็จหรือยกเลิกคำสั่งซื้อเรียบร้อยแล้ว",
-        color: "#ef4444",
+        color: "#ef4444", // Red
         bg: "rgba(239, 68, 68, 0.08)",
         iconColor: "#ef4444"
       };
     }
-    if (isDone) {
+    if (currentStatus === "รอรับออเดอร์") {
       return {
-        title: "รายการสำเร็จ 🎉",
-        subtitle: orderType === "dine-in" ? "อาหารเสิร์ฟเรียบร้อยแล้ว ขอบคุณที่มาทาน!" : "อาหารส่งถึงมือคุณแล้ว ขอบคุณที่ใช้บริการ!",
-        color: "#10b981",
-        bg: "rgba(16, 185, 129, 0.08)",
-        iconColor: "#10b981"
-      };
-    }
-    if (isReady) {
-      return {
-        title: orderType === "dine-in" ? "อาหารพร้อมเสิร์ฟ! 🍽️" : orderType === "takeaway" ? "อาหารพร้อมรับแล้ว! 🛍️" : "กำลังส่งอาหาร! 🛵",
-        subtitle: orderType === "dine-in" ? "พนักงานกำลังนำอาหารมาเสิร์ฟ" : orderType === "takeaway" ? "กรุณาแสดงหมายเลขคิวที่เคาน์เตอร์" : "ไรเดอร์กำลังเดินทาง",
-        color: "#6366f1",
-        bg: "rgba(99, 102, 241, 0.08)",
-        iconColor: "#6366f1"
-      };
-    }
-    if (isPreparing) {
-      return {
-        title: "กำลังปรุงอาหาร 👨‍🍳",
-        subtitle: orderType === "dine-in" ? "รอเสิร์ฟอาหารในอีกสักครู่" : "รอรับอาหารในอีกสักครู่",
-        color: "#3b82f6",
+        title: "กำลังรอรับออเดอร์",
+        subtitle: "ร้านค้ากำลังตรวจสอบสลิปและเตรียมเข้าครัว",
+        color: "#3b82f6", // Blue
         bg: "rgba(59, 130, 246, 0.08)",
         iconColor: "#3b82f6"
       };
     }
-    // isPending / default
+    // สำหรับสถานะเตรียมอาหาร หรือจัดส่งสำเร็จ
     return {
-      title: "กำลังรอรับออเดอร์",
-      subtitle: "ร้านค้ารับออเดอร์แล้ว กำลังเตรียมเข้าครัว",
-      color: "#f59e0b",
-      bg: "rgba(245, 158, 11, 0.08)",
-      iconColor: "#f59e0b"
+      title: currentStatus === "สำเร็จ" ? "รายการสำเร็จ" : "กำลังดำเนินการ",
+      subtitle: currentStatus === "สำเร็จ"
+        ? ""
+        : (orderType === "dine-in" ? "รอเสิร์ฟอาหารในอีก 10 นาที" : "รอรับอาหารในอีก 14 นาที"),
+      color: "#10b981", // Emerald
+      bg: "rgba(16, 185, 129, 0.08)",
+      iconColor: "#10b981"
     };
-  }, [currentStatus, orderType, isPending, isPreparing, isReady, isDone, isCancelled]);
+  }, [currentStatus, orderType]);
 
   const cancelReasonsList = [
     "สั่งอาหารผิดเมนู / ลืมเพิ่มบางรายการ",
@@ -3703,31 +3794,29 @@ function StatusScreen({
       return;
     }
 
-    // Save cancellation state to localStorage and Supabase
-    if (activeOrder) {
+    // Save cancellation state to localStorage
+    const saved = localStorage.getItem("ran-lung-get-orders");
+    if (saved && activeOrder) {
       try {
-        const saved = localStorage.getItem("ran-lung-get-orders");
-        if (saved) {
-          const history: OrderHistory[] = JSON.parse(saved);
-          const updated = history.map(o => {
-            if (o.orderNumber === activeOrder.orderNumber) {
-              return {
-                ...o,
-                status: "ขอคืนเงิน" as const,
-                cancelReason: selectedReason,
-                cancelNote: customReason,
-                refundPromptPay: promptPayNumber
-              };
-            }
-            return o;
-          });
-        }
-        // Also update Supabase if order has a DB ID (not hist_ prefix)
-        if (activeOrder.id && !activeOrder.id.startsWith("hist_")) {
-          void supabase.from("orders").update({
-            status: "cancelled",
-          }).eq("id", activeOrder.id);
-        }
+        const history: OrderHistory[] = JSON.parse(saved);
+        const updated = history.map(o => {
+          if (o.orderNumber === activeOrder.orderNumber) {
+            return {
+              ...o,
+              status: "ขอคืนเงิน" as const,
+              cancelReason: selectedReason,
+              cancelNote: customReason,
+              refundPromptPay: promptPayNumber
+            };
+          }
+          return o;
+        });
+        localStorage.setItem("ran-lung-get-orders", JSON.stringify(updated));
+        // dispatch storage event manually for same-page listeners if needed
+        window.dispatchEvent(new StorageEvent("storage", {
+          key: "ran-lung-get-orders",
+          newValue: JSON.stringify(updated)
+        }));
       } catch (e) {
         console.error("Cancel failed:", e);
       }
@@ -3795,9 +3884,11 @@ function StatusScreen({
         <h2 className="mt-5 text-2xl font-bold" style={{ color: BRAND }}>
           {statusTheme.title}
         </h2>
-        <p className="mt-1 text-sm max-w-xs mx-auto leading-relaxed" style={{ color: INK_MUTED }}>
-          {statusTheme.subtitle}
-        </p>
+        {statusTheme.subtitle && (
+          <p className="mt-1 text-sm max-w-xs mx-auto leading-relaxed" style={{ color: INK_MUTED }}>
+            {statusTheme.subtitle}
+          </p>
+        )}
 
         {activeOrder?.orderType === "takeaway" && activeOrder?.queueNumber && (
           <motion.div
@@ -4049,26 +4140,75 @@ function MiniOrderTracker({
   orderNumber,
   onGoToStatus,
   orderType,
+  status,
 }: {
   orderNumber: string;
   onGoToStatus: () => void;
   orderType: OrderType;
+  status?: string;
 }) {
+  const { t } = useLanguage();
+
+  const isCompleted = status === "สำเร็จ" || status === "completed" || status === "เสร็จสิ้น";
+  const isCooking   = status === "กำลังทำ" || status === "กำลังเตรียม" || status === "preparing";
+  const isReady     = status === "พร้อมเสิร์ฟ" || status === "delivering" || status === "พร้อมรับอาหาร" || status === "กำลังจัดส่ง";
+  const isReceived  = !isCooking && !isReady && !isCompleted;
+
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    let timerId: any = null;
+    if (isCompleted) {
+      timerId = setTimeout(() => {
+        setIsVisible(false);
+      }, 10000);
+    } else {
+      setIsVisible(true);
+    }
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+    };
+  }, [isCompleted]);
+
+  if (!isVisible) return null;
+
   const steps = orderType === "dine-in"
     ? [
-      { id: 1, label: "รับออเดอร์", icon: Check, done: true },
-      { id: 2, label: "กำลังทำอาหาร", icon: ChefHat, done: false, active: true },
-      { id: 3, label: "เสร็จสิ้น", icon: PartyPopper, done: false },
+      { id: 1, label: t("รับออเดอร์"),      icon: Check,        done: isCooking || isReady || isCompleted, active: isReceived },
+      { id: 2, label: t("กำลังทำอาหาร"),    icon: ChefHat,      done: isReady || isCompleted,              active: isCooking },
+      { id: 3, label: t("เสร็จสิ้น"),       icon: PartyPopper,  done: false,                               active: isCompleted },
     ]
-    : [
-      { id: 1, label: "รับออเดอร์", icon: Check, done: true },
-      { id: 2, label: "กำลังเตรียมอาหาร", icon: ChefHat, done: true },
-      { id: 3, label: "คนรับอาหาร/กำลังขับไป", icon: Bike, done: false, active: true },
-      { id: 4, label: "เสร็จสิ้น", icon: PartyPopper, done: false },
-    ];
+    : orderType === "takeaway"
+      ? [
+        { id: 1, label: t("รับออเดอร์"),       icon: Check,       done: isCooking || isReady || isCompleted, active: isReceived },
+        { id: 2, label: t("กำลังเตรียมอาหาร"), icon: ChefHat,     done: isReady || isCompleted,              active: isCooking },
+        { id: 3, label: t("พร้อมรับอาหาร"),    icon: ShoppingBag, done: false,                               active: isReady || isCompleted },
+      ]
+      : [
+        { id: 1, label: t("รับออเดอร์"),               icon: Check,        done: isCooking || isReady || isCompleted, active: isReceived },
+        { id: 2, label: t("กำลังเตรียมอาหาร"),         icon: ChefHat,      done: isReady || isCompleted,              active: isCooking },
+        { id: 3, label: t("คนรับอาหาร/กำลังขับไป"),   icon: Bike,         done: isCompleted,                         active: isReady },
+        { id: 4, label: t("เสร็จสิ้น"),                icon: PartyPopper,  done: false,                               active: isCompleted },
+      ];
 
-  const doneCount = steps.filter((s) => s.done).length;
-  const progressPercent = ((doneCount + 0.5) / steps.length) * 100; // halfway through active step
+  const activeIndex = steps.findIndex((s) => s.active);
+  const doneCount   = steps.filter((s) => s.done).length;
+
+  // Progress bar: jump to 100% on completion, otherwise sit halfway through the active step
+  const progressPercent = isCompleted
+    ? 100
+    : activeIndex !== -1
+      ? ((activeIndex + 0.5) / steps.length) * 100
+      : ((doneCount + 0.5) / steps.length) * 100;
+
+  // Yellow connecting line fraction (0–1)
+  const lineFraction = isCompleted
+    ? 1
+    : activeIndex > 0
+      ? activeIndex / (steps.length - 1)
+      : 0;
 
   return (
     <div
@@ -4094,13 +4234,16 @@ function MiniOrderTracker({
           </div>
         </div>
         <motion.span
-          animate={{ scale: [1, 1.03, 1] }}
-          transition={{ duration: 2, repeat: Infinity }}
+          animate={!isCompleted ? { scale: [1, 1.03, 1] } : undefined}
+          transition={!isCompleted ? { duration: 2, repeat: Infinity } : undefined}
           className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
-          style={{ background: "rgba(59,130,246,0.08)", color: "#2563eb" }}
+          style={{
+            background: isCompleted ? "rgba(16,185,129,0.08)" : "rgba(59,130,246,0.08)",
+            color:      isCompleted ? "#10b981"               : "#2563eb",
+          }}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-          กำลังดำเนินการ
+          <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${isCompleted ? "bg-emerald-500" : "bg-blue-500"}`} />
+          {isCompleted ? t("เสร็จสิ้น") : t("กำลังดำเนินการ")}
         </motion.span>
       </div>
 
@@ -4122,13 +4265,13 @@ function MiniOrderTracker({
           className="absolute top-4 h-[2px] -translate-y-1/2"
           style={{ background: "#eef2f6", left: 16, right: 16 }}
         />
-        {/* Yellow active connecting line */}
+        {/* Yellow active connecting line — stretches to each step as status advances */}
         <div
-          className="absolute top-4 h-[2px] -translate-y-1/2 transition-all duration-500"
+          className="absolute top-4 h-[2px] -translate-y-1/2 transition-all duration-700"
           style={{
             background: "#ffcb44",
             left: 16,
-            width: `calc((${Math.max(0, (doneCount - 1) / (steps.length - 1))} * (100% - 32px)))`,
+            width: `calc(${lineFraction} * (100% - 32px))`,
           }}
         />
         {steps.map((s, i) => {
