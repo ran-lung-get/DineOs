@@ -236,13 +236,14 @@ function LoginPage() {
     <div className="min-h-screen w-full flex bg-[#fff8f2] text-[#0f1f2b] overflow-hidden">
       {/* Left side: Premium branding (Desktop only) */}
       <div 
-        className="hidden md:flex md:w-[50%] lg:w-[55%] relative flex-col justify-between p-12 text-white overflow-hidden shrink-0"
+        className="hidden md:flex md:w-[50%] lg:w-[55%] relative flex-col justify-between p-12 text-white overflow-hidden shrink-0 select-none"
         style={{
-          background: `linear-gradient(135deg, ${BRAND} 0%, #050d15 100%)`,
+          background: `linear-gradient(145deg, ${BRAND} 0%, #030a12 100%)`,
         }}
       >
+        {/* Background Image & Overlay */}
         <div 
-          className="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-luminosity transition-all duration-700 hover:scale-105"
+          className="absolute inset-0 bg-cover bg-center opacity-35 mix-blend-luminosity transition-all duration-1000 hover:scale-105"
           style={{
             backgroundImage: "url('/thai_food_hero.jpg')",
           }}
@@ -250,115 +251,146 @@ function LoginPage() {
         <div 
           className="absolute inset-0 pointer-events-none"
           style={{
-            background: "linear-gradient(to bottom, rgba(0,46,71,0.4) 0%, rgba(5,13,21,0.85) 100%)",
+            background: "linear-gradient(180deg, rgba(0,46,71,0.5) 0%, rgba(3,10,18,0.9) 100%)",
           }}
         />
+        
+        {/* Decorative Ambient Light Orbs */}
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 rounded-full bg-[#fcc14a]/15 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 rounded-full bg-[#004165]/40 blur-[140px] pointer-events-none" />
+
+        {/* Pattern overlay */}
         <div
-          className="absolute inset-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none opacity-40"
           style={{
-            backgroundImage: "radial-gradient(circle, rgba(252,193,74,0.08) 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(circle, rgba(252,193,74,0.12) 1px, transparent 1px)",
             backgroundSize: "32px 32px",
           }}
         />
 
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl overflow-hidden border border-white/20 bg-white/10 backdrop-blur-md p-1.5 flex items-center justify-center">
-            <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+        {/* Top Header */}
+        <div className="relative z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-11 w-11 rounded-2xl overflow-hidden border border-white/20 bg-white/10 backdrop-blur-md p-1.5 flex items-center justify-center shadow-lg shadow-black/20">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-bold text-lg tracking-wider" style={{ fontFamily: "'Prompt', sans-serif" }}>
+                ร้านลุงเก้ต · LUNG GET
+              </span>
+              <span className="text-[11px] text-white/50 tracking-widest uppercase">Authentic Thai Kitchen</span>
+            </div>
           </div>
-          <span className="font-bold text-lg tracking-wider" style={{ fontFamily: "'Prompt', sans-serif" }}>
-            ร้านลุงเก้ต · LUNG GET
-          </span>
         </div>
 
-        <div className="relative z-10 my-auto max-w-xl space-y-6">
-          <span className="inline-block px-3.5 py-1 rounded-full text-xs font-bold bg-[#fcc14a]/20 text-[#fcc14a] border border-[#fcc14a]/30 uppercase tracking-widest">
-            Epicurean Experience
-          </span>
-          <h2 className="text-4xl lg:text-5xl font-black leading-tight tracking-tight" style={{ fontFamily: "'Prompt', sans-serif" }}>
+        {/* Center Content with Floating Badges */}
+        <div className="relative z-10 my-auto max-w-xl space-y-7">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold bg-[#fcc14a]/20 text-[#fcc14a] border border-[#fcc14a]/40 uppercase tracking-widest backdrop-blur-md shadow-inner">
+              <span className="w-2 h-2 rounded-full bg-[#fcc14a] animate-ping" />
+              Epicurean Experience
+            </span>
+          </div>
+
+          <h2 className="text-4xl lg:text-5xl font-black leading-[1.2] tracking-tight" style={{ fontFamily: "'Prompt', sans-serif" }}>
             รสชาติต้นตำรับ <br/>
-            <span style={{ color: GOLD }}>ปรุงร้อนสดใหม่</span> ทุกจาน
+            <span className="bg-gradient-to-r from-[#fcc14a] via-[#ffe3a3] to-[#fcc14a] bg-clip-text text-transparent drop-shadow-sm">
+              ปรุงร้อนสดใหม่
+            </span> ทุกจาน
           </h2>
-          <p className="text-white/70 text-sm lg:text-base leading-relaxed">
+          
+          <p className="text-white/75 text-sm lg:text-base leading-relaxed font-light">
             สัมผัสประสบการณ์การสั่งอาหารที่สะดวกและรวดเร็วที่สุด ไม่ว่าจะรับประทานที่ร้าน สั่งกลับบ้าน หรือจัดส่งถึงบ้าน เราพร้อมเสิร์ฟรสชาติแห่งความสุขให้คุณถึงที่
           </p>
+
+          {/* Floating Feature Glass Badges */}
+          <div className="pt-2 flex flex-wrap gap-3">
+            <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md text-xs font-medium text-white/90 shadow-lg shadow-black/10 transition-transform duration-300 hover:-translate-y-1">
+              <span className="text-base">⭐</span>
+              <span>รสชาติอร่อยการันตี 4.9/5</span>
+            </div>
+            <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md text-xs font-medium text-white/90 shadow-lg shadow-black/10 transition-transform duration-300 hover:-translate-y-1">
+              <span className="text-base">⚡</span>
+              <span>สั่งง่าย รับอาหารรวดเร็ว</span>
+            </div>
+          </div>
         </div>
 
-        <div className="relative z-10 flex justify-between text-xs text-white/50 border-t border-white/10 pt-6">
+        {/* Bottom Status Footer */}
+        <div className="relative z-10 flex justify-between items-center text-xs text-white/50 border-t border-white/10 pt-6">
           <span>© 2026 ร้านลุงเก้ต. All rights reserved.</span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             ครัวเปิดให้บริการปกติ (08:00 - 21:00)
           </span>
         </div>
       </div>
 
-      {/* Right side: Login Form Container */}
-      <div className="w-full md:w-[50%] lg:w-[45%] flex flex-col justify-center items-center p-4 sm:p-8 relative overflow-y-auto no-scrollbar min-h-screen bg-[#fff8f2]">
-        <div
-          className="absolute inset-0 pointer-events-none md:hidden"
-          style={{
-            backgroundImage: "radial-gradient(circle, rgba(252,193,74,0.05) 1px, transparent 1px)",
-            backgroundSize: "32px 32px",
-            background: LINEN,
-          }}
-        />
+      {/* Right side: Login Form Container (Full Width & Height White Column) */}
+      <div className="w-full md:w-[50%] lg:w-[45%] flex flex-col relative overflow-y-auto no-scrollbar min-h-screen bg-white">
+        {/* Subtle Ambient Lighting Overlay */}
+        <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-[#002e47]/5 blur-[90px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 rounded-full bg-[#fcc14a]/5 blur-[90px] pointer-events-none" />
 
         {/* Frame */}
         <div
-          className="relative flex flex-col overflow-hidden w-full min-h-screen md:min-h-0 md:max-w-[430px] md:rounded-[28px] md:shadow-[0_20px_50px_rgba(0,46,71,0.15)] md:border md:border-[#002e47]/5 md:overflow-y-auto no-scrollbar z-10"
+          className="relative flex flex-col flex-1 w-full min-h-screen z-10"
           style={{
-            background: LINEN,
+            background: "#ffffff",
           }}
         >
-        {/* ── Hero ─────────────────────────────────────────── */}
+        {/* ── Hero Header ─────────────────────────────────────────── */}
         <div
-          className="flex flex-col items-center"
+          className="flex flex-col items-center relative overflow-hidden"
           style={{
-            paddingTop: 48,
-            paddingBottom: 40,
+            paddingTop: 52,
+            paddingBottom: 44,
             background: `linear-gradient(170deg, ${BRAND} 0%, ${BRAND_MID} 100%)`,
           }}
         >
+          {/* Subtle background glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-[#fcc14a]/10 blur-2xl pointer-events-none" />
+
           {/* App icon */}
           <div
-            className="mb-4 grid place-items-center overflow-hidden"
+            className="mb-4 grid place-items-center overflow-hidden transition-transform duration-300 hover:scale-105"
             style={{
-              width: 120,
-              height: 120,
-              borderRadius: 30,
+              width: 110,
+              height: 110,
+              borderRadius: 28,
               background: "rgba(255,255,255,0.08)",
-              border: "1.5px solid rgba(252,193,74,0.3)",
+              border: "1.5px solid rgba(252,193,74,0.35)",
               backdropFilter: "blur(12px)",
-              boxShadow: "0 8px 28px rgba(0,0,0,0.3)",
+              boxShadow: "0 10px 32px rgba(0,0,0,0.35)",
             }}
           >
             <img src="/logo.png" alt="ร้านลุงเก็ต Logo" className="w-full h-full object-cover" />
           </div>
 
           <h1
-            className="text-[24px] font-bold text-white tracking-tight"
+            className="text-[26px] font-extrabold text-white tracking-tight"
             style={{ fontFamily: "'Prompt', sans-serif" }}
           >
             ร้านลุงเก้ต
           </h1>
-          <p className="mt-1 text-[13px]" style={{ color: "rgba(255,255,255,0.5)" }}>
+          <p className="mt-1 text-[13px] font-light" style={{ color: "rgba(255,255,255,0.6)" }}>
             สั่งอาหารง่าย ๆ ผ่านระบบออนไลน์
           </p>
         </div>
 
-        {/* Wave */}
+        {/* Wave Divider */}
         <div style={{ marginTop: -1, lineHeight: 0 }}>
           <svg viewBox="0 0 430 48" xmlns="http://www.w3.org/2000/svg">
-            <path d="M0 0 C90 48 340 48 430 0 L430 48 L0 48 Z" fill={LINEN} />
+            <path d="M0 0 C90 48 340 48 430 0 L430 48 L0 48 Z" fill="#ffffff" />
           </svg>
         </div>
 
         {/* ── Form area ──────────────────────────────────── */}
-        <div className="flex flex-col flex-1 px-7 pt-2 pb-8 gap-5">
+        <div className="flex flex-col flex-1 w-full max-w-[480px] mx-auto px-6 sm:px-10 pt-2 pb-8 gap-5">
           {session ? (
             <div className="flex flex-col gap-5 py-4">
               <div
-                className="rounded-2xl p-5 border text-center flex flex-col gap-3.5"
+                className="rounded-2xl p-5 border text-center flex flex-col gap-3.5 shadow-sm"
                 style={{ background: "rgba(0,46,71,0.03)", borderColor: "rgba(0,46,71,0.08)" }}
               >
                 <span className="text-3xl">👤</span>
@@ -379,10 +411,10 @@ function LoginPage() {
               <div className="flex flex-col gap-2.5">
                 <button
                   onClick={() => navigate({ to: "/" })}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-white text-[15px] transition-all active:scale-[0.97] cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-white text-[15px] transition-all duration-200 hover:shadow-[0_8px_25px_rgba(0,46,71,0.35)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
                   style={{
                     background: `linear-gradient(135deg, ${BRAND} 0%, ${BRAND_MID} 100%)`,
-                    boxShadow: "0 6px 20px rgba(0,46,71,0.3)",
+                    boxShadow: "0 6px 20px rgba(0,46,71,0.25)",
                   }}
                 >
                   ไปยังหน้าแรก (ตามสิทธิ์การใช้งาน)
@@ -396,7 +428,7 @@ function LoginPage() {
                     setLoading(false);
                   }}
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-[#b91c1c] text-[15px] transition-all active:scale-[0.97] bg-red-50 hover:bg-red-100 border border-red-200 cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-[#b91c1c] text-[15px] transition-all duration-200 active:scale-[0.97] bg-red-50 hover:bg-red-100 border border-red-200 cursor-pointer"
                 >
                   {loading ? "กำลังออกจากระบบ..." : "ออกจากระบบเพื่อเปลี่ยนบัญชี"}
                 </button>
@@ -405,7 +437,7 @@ function LoginPage() {
           ) : (
             <>
               {/* Tab selector */}
-              <div className="flex rounded-2xl p-1" style={{ background: "rgba(0,46,71,0.06)" }}>
+              <div className="flex rounded-2xl p-1.5 shadow-inner" style={{ background: "rgba(0,46,71,0.05)" }}>
                 {(["login", "register"] as Tab[]).map((t) => (
                   <button
                     key={t}
@@ -414,13 +446,13 @@ function LoginPage() {
                       setFormError("");
                       setFormSuccess("");
                     }}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                    className="flex-1 py-3 rounded-xl text-sm font-bold transition-all duration-200 cursor-pointer"
                     style={
                       tab === t
                         ? {
                           background: BRAND,
                           color: "white",
-                          boxShadow: "0 2px 12px rgba(0,46,71,0.25)",
+                          boxShadow: "0 4px 14px rgba(0,46,71,0.28)",
                         }
                         : { color: INK_MUTED }
                     }
@@ -431,7 +463,7 @@ function LoginPage() {
               </div>
 
               {/* Email/Password form */}
-              <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                 {/* ── Register-only fields ── */}
                 {tab === "register" && (
                   <>
@@ -777,12 +809,12 @@ function LoginPage() {
                   id="email-submit-btn"
                   type="submit"
                   disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-white text-[15px] transition-all active:scale-[0.97] cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-white text-[15px] transition-all duration-200 hover:shadow-[0_10px_28px_rgba(0,46,71,0.35)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer mt-1"
                   style={{
                     background: loading
                       ? "rgba(0,46,71,0.4)"
                       : `linear-gradient(135deg, ${BRAND} 0%, ${BRAND_MID} 100%)`,
-                    boxShadow: loading ? "none" : "0 6px 20px rgba(0,46,71,0.3)",
+                    boxShadow: loading ? "none" : "0 6px 20px rgba(0,46,71,0.25)",
                   }}
                 >
                   {loading ? (
@@ -807,26 +839,27 @@ function LoginPage() {
                 }}
                 onMouseEnter={() => setHoveredGuest(true)}
                 onMouseLeave={() => setHoveredGuest(false)}
-                className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-[#002e47] text-[16px] transition-all duration-200 active:scale-[0.97]"
+                className="w-full flex items-center justify-center gap-2.5 rounded-2xl py-4 font-bold text-[#002e47] text-[15px] transition-all duration-200 active:scale-[0.98] cursor-pointer"
                 style={{
-                  background: hoveredGuest ? "rgba(252, 193, 74, 0.06)" : "#ffffff",
+                  background: hoveredGuest ? "rgba(252, 193, 74, 0.08)" : "#ffffff",
                   border: `1.5px solid ${GOLD}`,
                   boxShadow: hoveredGuest
-                    ? "0 6px 16px rgba(252,193,74,0.15)"
+                    ? "0 8px 20px rgba(252,193,74,0.2)"
                     : "0 4px 12px rgba(252,193,74,0.08)",
-                  transform: hoveredGuest ? "scale(1.01)" : "scale(1)",
-                  marginTop: "4px",
-                  cursor: "pointer",
+                  transform: hoveredGuest ? "translateY(-1px)" : "translateY(0)",
                 }}
               >
-                <ShoppingBag size={20} className="text-[#002e47] stroke-[2.5]" /> สั่งหน้าร้าน
+                <div className="p-1 rounded-lg bg-[#fcc14a]/20">
+                  <ShoppingBag size={18} className="text-[#002e47] stroke-[2.5]" />
+                </div>
+                <span>สั่งหน้าร้าน (ไม่ต้องเข้าสู่ระบบ)</span>
               </button>
 
               {/* Divider — show social login only on login tab */}
               {tab === "login" && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 my-1">
                   <div className="flex-1 h-px" style={{ background: "rgba(0,46,71,0.1)" }} />
-                  <span className="text-xs" style={{ color: INK_MUTED }}>
+                  <span className="text-xs font-medium" style={{ color: INK_MUTED }}>
                     หรือเข้าสู่ระบบด้วย
                   </span>
                   <div className="flex-1 h-px" style={{ background: "rgba(0,46,71,0.1)" }} />
@@ -842,10 +875,10 @@ function LoginPage() {
                     onClick={handleGoogleLogin}
                     disabled={loading}
                     type="button"
-                    className="w-full flex items-center justify-center gap-3 rounded-2xl py-4 font-bold text-slate-700 text-[15px] transition-all active:scale-[0.97] cursor-pointer"
+                    className="w-full flex items-center justify-center gap-3 rounded-2xl py-3.5 font-bold text-slate-700 text-[15px] transition-all duration-200 hover:border-slate-300 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
                     style={{
                       background: loading ? "rgba(255,255,255,0.7)" : "#ffffff",
-                      boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                      boxShadow: "0 4px 14px rgba(0,0,0,0.06)",
                       border: "1px solid rgba(0,0,0,0.1)",
                     }}
                   >
