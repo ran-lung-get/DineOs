@@ -1349,21 +1349,27 @@ function LiffApp() {
             >
               <button
                 onClick={() => setCartDrawer(true)}
-                className="w-full rounded-2xl px-5 py-4 flex items-center justify-between shadow-lift"
-                style={{ background: BRAND, color: "white" }}
+                className="w-full rounded-2xl px-5 py-4 flex items-center justify-between shadow-[0_12px_32px_rgba(0,46,71,0.38)] transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] cursor-pointer border border-[#fcc14a]/20"
+                style={{ background: `linear-gradient(135deg, ${BRAND} 0%, #001f30 100%)`, color: "white" }}
               >
                 <div className="flex items-center gap-3">
-                  <div className="relative grid h-9 w-9 place-items-center rounded-xl" style={{ background: "rgba(252,193,74,0.15)" }}>
-                    <ShoppingBag size={18} style={{ color: GOLD }} />
-                    <span className="absolute -top-1 -right-1 grid h-5 min-w-5 px-1 place-items-center rounded-full text-[10px] font-bold" style={{ background: GOLD, color: BRAND }}>
+                  <div className="relative grid h-10 w-10 place-items-center rounded-xl backdrop-blur-md" style={{ background: "rgba(252,193,74,0.18)" }}>
+                    <ShoppingBag size={20} style={{ color: GOLD }} />
+                    <span className="absolute -top-1.5 -right-1.5 grid h-5 min-w-5 px-1 place-items-center rounded-full text-[10px] font-extrabold shadow-sm border border-white" style={{ background: GOLD, color: BRAND }}>
                       {totalQty}
                     </span>
                   </div>
-                  <span className="font-medium">ตะกร้าสินค้า</span>
+                  <div className="flex flex-col text-left">
+                    <span className="font-bold text-sm leading-tight">ตะกร้าสินค้า</span>
+                    <span className="text-[11px] text-white/60 font-light">กดเพื่อดูและสั่งซื้อ</span>
+                  </div>
                 </div>
-                <span className="font-bold" style={{ color: GOLD }}>
-                  ฿{subtotal}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-lg" style={{ color: GOLD }}>
+                    ฿{subtotal}
+                  </span>
+                  <ChevronRight size={18} className="text-[#fcc14a]" />
+                </div>
               </button>
             </motion.div>
           )}
@@ -1707,6 +1713,12 @@ function HomeScreen({
   };
 
   const orderTypeRef = useRef<HTMLDivElement>(null);
+  const [homeSelectedCat, setHomeSelectedCat] = useState("all");
+
+  const homeFilteredItems = useMemo(() => {
+    if (homeSelectedCat === "all") return menuItems;
+    return menuItems.filter((m) => m.category === homeSelectedCat);
+  }, [homeSelectedCat, menuItems]);
 
   return (
     <div className="pb-36" style={{ background: LINEN }}>
@@ -1838,7 +1850,7 @@ function HomeScreen({
                 </span>
               )}
             </div>
-                        <button
+            <button
               aria-label="สั่งอาหาร"
               onClick={() => {
                 if (!orderType) {
@@ -1857,10 +1869,10 @@ function HomeScreen({
                 }
                 onOpenMenu();
               }}
-              className="inline-flex items-center justify-center rounded-full bg-[#ffcb44] px-4 py-2 text-sm font-semibold shadow-sm cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#ffcb44] to-[#fcc14a] px-5 py-2.5 text-sm font-bold shadow-[0_6px_20px_rgba(252,193,74,0.35)] transition-all duration-200 hover:scale-[1.03] active:scale-95 cursor-pointer"
               style={{ color: BRAND }}
             >
-              {t("สั่งอาหาร")} <ChevronRight size={14} />
+              {t("สั่งอาหาร")} <ChevronRight size={16} strokeWidth={2.5} />
             </button>
           </div>
         </div>
@@ -1868,7 +1880,7 @@ function HomeScreen({
         </div>
       </div>
 
-            {/* Mini order status tracker */}
+      {/* Mini order status tracker */}
       <AnimatePresence>
         {hasActiveOrder && (
           <motion.div
@@ -1888,9 +1900,9 @@ function HomeScreen({
         )}
       </AnimatePresence>
 
-            {/* Order type tiles */}
+      {/* Order type tiles */}
       <div ref={orderTypeRef} className="px-5 md:px-12 mt-4 max-w-7xl mx-auto w-full">
-        <h3 className="text-sm font-medium mb-3 flex flex-wrap items-center gap-x-1.5" style={{ color: BRAND }}>
+        <h3 className="text-sm font-bold mb-3 flex flex-wrap items-center gap-x-1.5" style={{ color: BRAND }}>
           <span>{t("ช่องทางการรับอาหาร")} <span className="text-red-500">*</span></span>
           {orderType === null && (
             <span className="text-xs text-slate-400 font-normal">
@@ -1903,7 +1915,7 @@ function HomeScreen({
             {t("* กรุณาเลือกช่องทางการรับอาหาร (ทานที่ร้าน, จัดส่งถึงที่ หรือ รับกลับบ้าน) ก่อนเริ่มสั่งซื้อ")}
           </p>
         )}
-        <div className={`grid grid-cols-3 gap-2 p-1.5 rounded-2xl transition-all duration-300 ${showTypeError ? "border-2 border-red-500 bg-red-50/20" : "border-2 border-transparent"}`}>
+        <div className={`grid grid-cols-3 gap-2.5 p-1.5 rounded-2xl transition-all duration-300 ${showTypeError ? "border-2 border-red-500 bg-red-50/20" : "border-2 border-transparent"}`}>
           <button
             aria-label="เลือกทานที่ร้าน"
             onClick={() => {
@@ -1911,15 +1923,16 @@ function HomeScreen({
               setShowTypeError(false);
               onOpenTablePicker();
             }}
-            className="rounded-xl p-2.5 text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 bg-white border"
+            className="rounded-2xl p-3 text-center flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:scale-95 bg-white border shadow-sm"
             style={{
               background: orderType === "dine-in" ? BRAND : "white",
               color: orderType === "dine-in" ? GOLD : BRAND,
-              borderColor: orderType === "dine-in" ? BRAND : "#ece4d6"
+              borderColor: orderType === "dine-in" ? BRAND : "#ece4d6",
+              boxShadow: orderType === "dine-in" ? "0 6px 20px rgba(0,46,71,0.22)" : "0 2px 8px rgba(0,0,0,0.03)",
             }}
           >
-            <div className="grid h-8 w-8 place-items-center rounded-md" style={{ background: orderType === "dine-in" ? "rgba(252,193,74,0.12)" : LINEN, color: orderType === "dine-in" ? GOLD : BRAND }}>
-              <Utensils size={15} />
+            <div className="grid h-9 w-9 place-items-center rounded-xl transition-colors" style={{ background: orderType === "dine-in" ? "rgba(252,193,74,0.18)" : LINEN, color: orderType === "dine-in" ? GOLD : BRAND }}>
+              <Utensils size={17} />
             </div>
             <div className="font-bold text-[12px]">{t("ทานที่ร้าน")}</div>
           </button>
@@ -1930,15 +1943,16 @@ function HomeScreen({
               setOrderType("takeaway");
               setShowTypeError(false);
             }}
-            className="rounded-xl p-2.5 text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 bg-white border"
+            className="rounded-2xl p-3 text-center flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:scale-95 bg-white border shadow-sm"
             style={{
               background: orderType === "takeaway" ? BRAND : "white",
               color: orderType === "takeaway" ? GOLD : BRAND,
-              borderColor: orderType === "takeaway" ? BRAND : "#ece4d6"
+              borderColor: orderType === "takeaway" ? BRAND : "#ece4d6",
+              boxShadow: orderType === "takeaway" ? "0 6px 20px rgba(0,46,71,0.22)" : "0 2px 8px rgba(0,0,0,0.03)",
             }}
           >
-            <div className="grid h-8 w-8 place-items-center rounded-md" style={{ background: orderType === "takeaway" ? "rgba(252,193,74,0.12)" : LINEN, color: orderType === "takeaway" ? GOLD : BRAND }}>
-              <ShoppingBag size={15} />
+            <div className="grid h-9 w-9 place-items-center rounded-xl transition-colors" style={{ background: orderType === "takeaway" ? "rgba(252,193,74,0.18)" : LINEN, color: orderType === "takeaway" ? GOLD : BRAND }}>
+              <ShoppingBag size={17} />
             </div>
             <div className="font-bold text-[12px]">{t("รับกลับบ้าน")}</div>
           </button>
@@ -1949,15 +1963,16 @@ function HomeScreen({
               setOrderType("delivery");
               setShowTypeError(false);
             }}
-            className="rounded-xl p-2.5 text-center flex flex-col items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 bg-white border"
+            className="rounded-2xl p-3 text-center flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:scale-95 bg-white border shadow-sm"
             style={{
               background: orderType === "delivery" ? BRAND : "white",
               color: orderType === "delivery" ? GOLD : BRAND,
-              borderColor: orderType === "delivery" ? BRAND : "#ece4d6"
+              borderColor: orderType === "delivery" ? BRAND : "#ece4d6",
+              boxShadow: orderType === "delivery" ? "0 6px 20px rgba(0,46,71,0.22)" : "0 2px 8px rgba(0,0,0,0.03)",
             }}
           >
-            <div className="grid h-8 w-8 place-items-center rounded-md" style={{ background: orderType === "delivery" ? "rgba(252,193,74,0.12)" : LINEN, color: orderType === "delivery" ? GOLD : BRAND }}>
-              <Bike size={15} />
+            <div className="grid h-9 w-9 place-items-center rounded-xl transition-colors" style={{ background: orderType === "delivery" ? "rgba(252,193,74,0.18)" : LINEN, color: orderType === "delivery" ? GOLD : BRAND }}>
+              <Bike size={17} />
             </div>
             <div className="font-bold text-[12px]">{t("จัดส่งถึงที่")}</div>
           </button>
@@ -2050,52 +2065,59 @@ function HomeScreen({
                     }
                     onPickItem(m);
                   }}
-                  className="bg-white rounded-2xl p-3 shadow-soft cursor-pointer active:scale-[0.99] transition-transform min-w-[220px] w-56 shrink-0"
+                  className="group bg-white rounded-2xl p-3.5 shadow-[0_4px_16px_rgba(0,0,0,0.04)] border border-[#ece4d6]/80 cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,46,71,0.12)] min-w-[220px] w-56 shrink-0 flex flex-col justify-between"
                 >
-                  <div className="relative h-36 w-full overflow-hidden rounded-xl mb-3">
-                    <img src={encodeURI(String(m.image))} alt={tMenu(m.name, "name")} className="h-full w-full object-cover" />
+                  <div>
+                    <div className="relative h-36 w-full overflow-hidden rounded-xl mb-3">
+                      <img src={encodeURI(String(m.image))} alt={tMenu(m.name, "name")} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                      {m.category === "signature" && (
+                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#002e47]/85 text-[#fcc14a] backdrop-blur-md border border-[#fcc14a]/30">
+                          Signature
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col">
+                      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider" style={{ color: GOLD }}>
+                        <Star size={10} fill={GOLD} stroke={GOLD} />
+                        <span style={{ color: INK_MUTED }}>{language === "th" ? "Chef's pick" : language === "zh" ? "厨师推荐" : "Chef's pick"}</span>
+                      </div>
+                      <h3 className="font-bold text-[15px] truncate mt-1 group-hover:text-[#002e47] transition-colors" style={{ color: BRAND }}>
+                        {tMenu(m.name, "name")}
+                      </h3>
+                      <p className="text-xs mt-1 line-clamp-2 font-light" style={{ color: INK_MUTED }}>
+                        {tMenu(m.desc, "desc")}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0 flex flex-col">
-                    <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider" style={{ color: GOLD }}>
-                      <Star size={10} fill={GOLD} stroke={GOLD} />
-                      <span style={{ color: INK_MUTED }}>{language === "th" ? "Chef's pick" : language === "zh" ? "厨师推荐" : "Chef's pick"}</span>
-                    </div>
-                    <h3 className="font-semibold text-[15px] truncate mt-1" style={{ color: BRAND }}>
-                      {tMenu(m.name, "name")}
-                    </h3>
-                    <p className="text-xs mt-1 line-clamp-2" style={{ color: INK_MUTED }}>
-                      {tMenu(m.desc, "desc")}
-                    </p>
-                    <div className="mt-3 flex items-end justify-between">
-                      <span className="font-bold text-base" style={{ color: BRAND }}>
-                        ฿{m.price}
-                      </span>
-                      <button
-                        aria-label={`หยิบ ${tMenu(m.name, "name")} ใส่ตะกร้า`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!orderType) {
-                            setShowTypeError(true);
-                            orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
-                            return;
-                          }
-                          if (orderType === "dine-in" && !selectedTable) {
-                            onOpenTablePicker();
-                            return;
-                          }
-                          if (orderType === "delivery" && (!address || address.trim().length < 5 || !deliveryMethod)) {
-                            setShowAddressError(true);
-                            orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
-                            return;
-                          }
-                          onPickItem(m);
-                        }}
-                        className="grid h-9 w-9 place-items-center rounded-full shadow-soft cursor-pointer"
-                        style={{ background: BRAND, color: GOLD }}
-                      >
-                        <Plus size={18} />
-                      </button>
-                    </div>
+                  <div className="mt-3.5 flex items-end justify-between pt-2 border-t border-slate-100">
+                    <span className="font-extrabold text-base" style={{ color: BRAND }}>
+                      ฿{m.price}
+                    </span>
+                    <button
+                      aria-label={`หยิบ ${tMenu(m.name, "name")} ใส่ตะกร้า`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!orderType) {
+                          setShowTypeError(true);
+                          orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
+                          return;
+                        }
+                        if (orderType === "dine-in" && !selectedTable) {
+                          onOpenTablePicker();
+                          return;
+                        }
+                        if (orderType === "delivery" && (!address || address.trim().length < 5 || !deliveryMethod)) {
+                          setShowAddressError(true);
+                          orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
+                          return;
+                        }
+                        onPickItem(m);
+                      }}
+                      className="grid h-9 w-9 place-items-center rounded-full shadow-md cursor-pointer transition-transform duration-200 active:scale-90 hover:scale-105"
+                      style={{ background: BRAND, color: GOLD }}
+                    >
+                      <Plus size={18} />
+                    </button>
                   </div>
                 </motion.div>
               ))}
@@ -2110,6 +2132,144 @@ function HomeScreen({
           >
             <ChevronRight size={18} />
           </button>
+        </div>
+      </div>
+
+      {/* Full Menu by Food Type Section */}
+      <div className="px-5 md:px-12 mt-10 max-w-7xl mx-auto w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-xl font-extrabold" style={{ color: BRAND }}>
+              {t("รายการอาหารทั้งหมด")}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5 font-light">
+              เลือกดูตามประเภทอาหารและเครื่องดื่ม
+            </p>
+          </div>
+          <button
+            onClick={onOpenMenu}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-[#002e47] bg-[#fcc14a]/20 hover:bg-[#fcc14a]/30 px-3.5 py-1.5 rounded-full border border-[#fcc14a]/40 transition active:scale-95 cursor-pointer self-start sm:self-auto"
+          >
+            <Search size={14} /> ค้นหาเมนู <ChevronRight size={14} />
+          </button>
+        </div>
+
+        {/* Food Type Pill Tabs */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 pt-1">
+          {[
+            { id: "all", label: "ทั้งหมด", icon: "🍽️" },
+            { id: "signature", label: "Signature", icon: "⭐" },
+            { id: "main", label: "ผัด & กับข้าว", icon: "🍳" },
+            { id: "rice", label: "ข้าวผัด", icon: "🍚" },
+            { id: "noodles", label: "เมนูเส้น", icon: "🍜" },
+            { id: "vegetarian", label: "มังสวิรัติ", icon: "🥬" },
+            { id: "drinks", label: "เครื่องดื่ม", icon: "🥤" },
+            { id: "dessert", label: "ของหวาน", icon: "🍧" },
+          ].map((cat) => {
+            const active = homeSelectedCat === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setHomeSelectedCat(cat.id)}
+                className="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold transition-all duration-200 shrink-0 cursor-pointer shadow-sm border"
+                style={{
+                  background: active ? BRAND : "white",
+                  color: active ? GOLD : BRAND,
+                  borderColor: active ? BRAND : "#ece4d6",
+                  boxShadow: active ? "0 4px 14px rgba(0,46,71,0.2)" : "0 2px 6px rgba(0,0,0,0.02)",
+                }}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Full Menu Grid */}
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {homeFilteredItems.map((m) => (
+            <div
+              key={m.id}
+              onClick={() => {
+                if (!orderType) {
+                  setShowTypeError(true);
+                  orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
+                  return;
+                }
+                if (orderType === "dine-in" && !selectedTable) {
+                  onOpenTablePicker();
+                  return;
+                }
+                if (orderType === "delivery" && (!address || address.trim().length < 5 || !deliveryMethod)) {
+                  setShowAddressError(true);
+                  orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
+                  return;
+                }
+                onPickItem(m);
+              }}
+              className="bg-white rounded-2xl p-3.5 shadow-sm border border-[#ece4d6]/80 flex items-start gap-3.5 cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 group"
+            >
+              <div className="relative h-20 w-20 rounded-xl overflow-hidden flex-shrink-0">
+                <img
+                  src={encodeURI(String(m.image))}
+                  alt={tMenu(m.name, "name")}
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch">
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-[#002e47] border border-slate-200/80">
+                      {m.category === "signature" ? "⭐ Signature" :
+                       m.category === "main" ? "🍳 ผัด/กับข้าว" :
+                       m.category === "rice" ? "🍚 ข้าวผัด" :
+                       m.category === "noodles" ? "🍜 เมนูเส้น" :
+                       m.category === "vegetarian" ? "🥬 มังสวิรัติ" :
+                       m.category === "drinks" ? "🥤 เครื่องดื่ม" :
+                       m.category === "dessert" ? "🍧 ของหวาน" : m.category}
+                    </span>
+                  </div>
+                  <h3 className="font-bold text-sm truncate group-hover:text-[#002e47] transition-colors" style={{ color: BRAND }}>
+                    {tMenu(m.name, "name")}
+                  </h3>
+                  <p className="text-xs mt-0.5 text-slate-500 line-clamp-1 font-light">
+                    {tMenu(m.desc, "desc")}
+                  </p>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="font-extrabold text-base" style={{ color: BRAND }}>
+                    ฿{m.price}
+                  </span>
+                  <button
+                    aria-label={`หยิบ ${tMenu(m.name, "name")} ใส่ตะกร้า`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!orderType) {
+                        setShowTypeError(true);
+                        orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
+                        return;
+                      }
+                      if (orderType === "dine-in" && !selectedTable) {
+                        onOpenTablePicker();
+                        return;
+                      }
+                      if (orderType === "delivery" && (!address || address.trim().length < 5 || !deliveryMethod)) {
+                        setShowAddressError(true);
+                        orderTypeRef.current?.scrollIntoView({ behavior: "smooth" });
+                        return;
+                      }
+                      onPickItem(m);
+                    }}
+                    className="grid h-8 w-8 place-items-center rounded-full shadow-sm cursor-pointer transition-transform duration-200 active:scale-90 hover:scale-105"
+                    style={{ background: BRAND, color: GOLD }}
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -2801,8 +2961,12 @@ function MenuOverlay({
   const [showSortModal, setShowSortModal] = useState(false);
 
   const categories = [
-    { id: "all", label: "แนะนำ" },
-    { id: "signature", label: "อาหารจานหลัก" },
+    { id: "all", label: "ทั้งหมด" },
+    { id: "signature", label: "Signature" },
+    { id: "main", label: "ผัด & กับข้าว" },
+    { id: "rice", label: "ข้าวผัด" },
+    { id: "noodles", label: "เมนูเส้น" },
+    { id: "vegetarian", label: "มังสวิรัติ" },
     { id: "drinks", label: "เครื่องดื่ม" },
     { id: "dessert", label: "ของหวาน" },
   ];
@@ -2810,10 +2974,8 @@ function MenuOverlay({
   // Filter and sort items dynamically
   const filteredAndSortedItems = useMemo(() => {
     let list = activeCat === "all"
-      ? menuItems.filter((m) => m.category === "signature")
-      : activeCat === "signature"
-        ? menuItems.filter((m) => m.category !== "drinks" && m.category !== "dessert")
-        : menuItems.filter((m) => m.category === activeCat);
+      ? menuItems
+      : menuItems.filter((m) => m.category === activeCat);
 
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
