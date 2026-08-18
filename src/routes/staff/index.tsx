@@ -45,6 +45,10 @@ import {
   Grip,
   BookOpen,
   LogOut,
+  MapPin,
+  Phone,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 
 export const Route = createFileRoute("/staff/")({
@@ -63,6 +67,8 @@ type OrderHistory = {
   status: string;
   orderType?: OrderType;
   customerName?: string;
+  customerPhone?: string;
+  deliveryAddress?: string;
   tableNumber?: string;
   queueNumber?: string;
   note?: string;
@@ -327,7 +333,8 @@ function KitchenMonitor() {
         .select(`
           *,
           customers (
-            display_name
+            display_name,
+            phone
           ),
           order_items (*)
         `)
@@ -358,14 +365,20 @@ function KitchenMonitor() {
             status: localStatus,
             orderType: o.order_type,
             customerName: o.customers?.display_name || "คุณลูกค้า",
+            customerPhone: o.customers?.phone || "",
+            deliveryAddress: o.delivery_address || "",
             tableNumber: o.table_number || "",
-            queueNumber: o.queue_number || "",
+            queueNumber: o.queue_number || (o.table_number?.startsWith("Q-") ? o.table_number : (o.special_instructions?.match(/Q-\d+/)?.[0] || "")),
             note: o.special_instructions || ""
           };
         });
 
         setOrders((prev) => {
-          const localOnly = prev.filter(p => !p.id.startsWith("hist_") && !p.id.includes("-") && !mappedOrders.some(m => m.id === p.id));
+          const prevIds = new Set(prev.map(o => o.id));
+          const hasNew = mappedOrders.some(o => !prevIds.has(o.id));
+          if (hasNew && soundEnabled) playNotificationSound();
+
+          const localOnly = prev.filter(p => !mappedOrders.some(m => m.id === p.id || m.orderNumber === p.orderNumber));
           const combined = [...mappedOrders, ...localOnly];
           localStorage.setItem("ran-lung-get-orders", JSON.stringify(combined));
           return combined;
@@ -721,21 +734,33 @@ function KitchenMonitor() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 justify-between sm:justify-start w-full sm:w-auto border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
-                  <div className="flex items-center gap-1.5 text-xs font-bold" style={{ color: INK_MUTED }}>
-                    <Filter size={14} />
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                  <div className="flex items-center gap-1 text-xs font-bold shrink-0 mr-1" style={{ color: INK_MUTED }}>
+                    <Filter size={13} />
                     <span>ช่องทาง:</span>
                   </div>
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value)}
-                    className="bg-white border border-[#ece4d6] rounded-xl px-2.5 py-1.5 text-xs font-bold text-[#002e47] focus:outline-none shadow-sm flex-1 sm:flex-initial max-w-[150px]"
-                  >
-                    <option value="all">ทั้งหมด</option>
-                    <option value="dine-in">ทานที่ร้าน</option>
-                    <option value="takeaway">กลับบ้าน</option>
-                    <option value="delivery">เดลิเวอรี่</option>
-                  </select>
+                  {[
+                    { id: "all", label: "ทั้งหมด", icon: null, count: orders.filter(o => o.status !== "สำเร็จ" && o.status !== "ยกเลิก").length },
+                    { id: "dine-in", label: "ทานที่ร้าน", icon: "🍽️", count: orders.filter(o => o.orderType === "dine-in" && o.status !== "สำเร็จ" && o.status !== "ยกเลิก").length },
+                    { id: "takeaway", label: "กลับบ้าน", icon: "🛍️", count: orders.filter(o => o.orderType === "takeaway" && o.status !== "สำเร็จ" && o.status !== "ยกเลิก").length },
+                    { id: "delivery", label: "เดลิเวอรี่", icon: "🛵", count: orders.filter(o => o.orderType === "delivery" && o.status !== "สำเร็จ" && o.status !== "ยกเลิก").length },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setTypeFilter(t.id)}
+                      className={`px-2.5 py-1 rounded-xl text-xs font-black transition flex items-center gap-1 shrink-0 cursor-pointer border ${
+                        typeFilter === t.id
+                          ? "bg-[#002e47] text-[#fcc14a] border-[#002e47] shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {t.icon && <span>{t.icon}</span>}
+                      <span>{t.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${typeFilter === t.id ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+                        {t.count}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -785,7 +810,7 @@ function KitchenMonitor() {
                     </div>
                     <div className="flex flex-col bg-white rounded-3xl border border-[#ece4d6] shadow-soft">
                       <div className="p-4 bg-emerald-50 border-b border-[#ece4d6] flex items-center justify-between shrink-0">
-                        <span className="font-black text-sm text-[#002e47]">พร้อมเสิร์ฟ</span>
+                        <span className="font-black text-sm text-[#002e47]">พร้อมเสิร์ฟ / รอส่ง</span>
                         <span className="text-white text-xs font-black px-2 py-0.5 rounded-full bg-emerald-500">{ordersByStatus.ready.length}</span>
                       </div>
                       <div className="p-4 space-y-4 bg-[#f8fafc]/50 flex-1 overflow-y-auto max-h-[70vh]">
@@ -827,18 +852,57 @@ function OrderCard({ order, advanceOrderStatus, regressOrderStatus, cancelOrder 
   regressOrderStatus: (id: string) => void;
   cancelOrder: (id: string) => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const isDineIn = order.orderType === "dine-in";
   const isTakeaway = order.orderType === "takeaway";
   const isDelivery = order.orderType === "delivery";
+
   let typeBadge = "ทานที่ร้าน";
   let typeColor = "bg-emerald-50 text-emerald-800 border-emerald-200";
   let borderLeftColor = "border-l-[#fcc14a]";
-  if (isTakeaway) { typeBadge = "กลับบ้าน"; typeColor = "bg-blue-50 text-blue-800 border-blue-200"; borderLeftColor = "border-l-[#5a6e7a]"; }
-  else if (isDelivery) { typeBadge = "เดลิเวอรี่"; typeColor = "bg-amber-50 text-amber-800 border-amber-200"; borderLeftColor = "border-l-[#002e47]"; }
+
+  if (isTakeaway) {
+    typeBadge = `กลับบ้าน ${order.queueNumber ? `(${order.queueNumber})` : ""}`;
+    typeColor = "bg-blue-50 text-blue-800 border-blue-200";
+    borderLeftColor = "border-l-[#5a6e7a]";
+  } else if (isDelivery) {
+    typeBadge = "🛵 เดลิเวอรี่";
+    typeColor = "bg-amber-50 text-amber-900 border-amber-300 font-black";
+    borderLeftColor = "border-l-[#f59e0b]";
+  }
+
   let nextBtnText = "เริ่มทำครัว";
   let nextBtnColor = "bg-[#002e47] text-white hover:bg-[#003957]";
-  if (order.status === "กำลังทำ") { nextBtnText = "ปรุงสำเร็จ"; nextBtnColor = "bg-blue-600 text-white hover:bg-blue-700"; }
-  else if (order.status === "พร้อมเสิร์ฟ") { nextBtnText = "ส่งเสิร์ฟสำเร็จ"; nextBtnColor = "bg-emerald-600 text-white hover:bg-emerald-700"; }
+
+  if (order.status === "กำลังทำ") {
+    if (isDelivery) {
+      nextBtnText = "ปรุงเสร็จ / รอไรเดอร์";
+      nextBtnColor = "bg-amber-600 text-white hover:bg-amber-700";
+    } else if (isTakeaway) {
+      nextBtnText = "ปรุงเสร็จ / เรียกลูกค้า";
+      nextBtnColor = "bg-blue-600 text-white hover:bg-blue-700";
+    } else {
+      nextBtnText = "ปรุงเสร็จ / พร้อมเสิร์ฟ";
+      nextBtnColor = "bg-blue-600 text-white hover:bg-blue-700";
+    }
+  } else if (order.status === "พร้อมเสิร์ฟ") {
+    if (isDelivery) {
+      nextBtnText = "ไรเดอร์รับ / ส่งแล้ว";
+      nextBtnColor = "bg-emerald-600 text-white hover:bg-emerald-700";
+    } else if (isTakeaway) {
+      nextBtnText = "ส่งมอบให้ลูกค้าแล้ว";
+      nextBtnColor = "bg-emerald-600 text-white hover:bg-emerald-700";
+    } else {
+      nextBtnText = "เสิร์ฟถึงโต๊ะแล้ว";
+      nextBtnColor = "bg-emerald-600 text-white hover:bg-emerald-700";
+    }
+  }
+
+  const handleCopyAddress = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className={`bg-white border-2 border-l-[6px] border-[#ece4d6] ${borderLeftColor} rounded-2xl p-4 shadow-sm hover:shadow transition relative space-y-3`}>
@@ -849,12 +913,49 @@ function OrderCard({ order, advanceOrderStatus, regressOrderStatus, cancelOrder 
         </div>
         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${typeColor}`}>{typeBadge}</span>
       </div>
-      <div className="pt-2 border-t border-slate-100">
-        <p className="text-[10px] font-bold text-slate-400">รายละเอียดลูกค้า:</p>
-        <p className="text-xs font-black text-[#002e47] mt-0.5">
-          {order.customerName || "คุณลูกค้า"} {isDineIn && order.tableNumber && `(โต๊ะ ${order.tableNumber})`}
-        </p>
+
+      {/* Customer Info & Contact */}
+      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-bold text-slate-400">ลูกค้า:</p>
+          <p className="text-xs font-black text-[#002e47] mt-0.5">
+            {order.customerName || "คุณลูกค้า"} {isDineIn && order.tableNumber && `(โต๊ะ ${order.tableNumber})`}
+          </p>
+        </div>
+        {order.customerPhone && (
+          <a
+            href={`tel:${order.customerPhone}`}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-xl text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition shrink-0"
+          >
+            <Phone size={10} />
+            <span>{order.customerPhone}</span>
+          </a>
+        )}
       </div>
+
+      {/* Delivery Address Box */}
+      {isDelivery && order.deliveryAddress && (
+        <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-xl space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-amber-900 flex items-center gap-1">
+              <MapPin size={11} className="text-amber-600 shrink-0" />
+              <span>ที่อยู่จัดส่ง:</span>
+            </span>
+            <button
+              onClick={() => handleCopyAddress(order.deliveryAddress!)}
+              className="text-[9px] font-bold text-amber-800 hover:text-amber-950 flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100/80 hover:bg-amber-200 transition cursor-pointer"
+            >
+              {copied ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+              <span>{copied ? "คัดลอกแล้ว" : "คัดลอก"}</span>
+            </button>
+          </div>
+          <p className="text-[11px] font-bold text-[#002e47] leading-tight break-words">
+            {order.deliveryAddress}
+          </p>
+        </div>
+      )}
+
+      {/* Item list */}
       <div className="space-y-1.5">
         {order.items.map((i, idx) => (
           <div key={idx} className="flex justify-between items-center text-xs">
@@ -863,20 +964,29 @@ function OrderCard({ order, advanceOrderStatus, regressOrderStatus, cancelOrder 
           </div>
         ))}
       </div>
+
       {order.note && (
         <div className="p-2 bg-red-50/50 border border-red-100 rounded-xl text-[10px] font-black text-red-700">
           💡 หมายเหตุ: {order.note}
         </div>
       )}
-      <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-1.5">
-        <button onClick={() => regressOrderStatus(order.id)} disabled={order.status === "รอดำเนินการ"} className="p-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-slate-600 transition disabled:opacity-50">
+
+      {/* Total Amount */}
+      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+        <span className="text-[10px] font-bold text-slate-400">ยอดรวม:</span>
+        <span className="font-black text-[#002e47]">฿{order.total} {isDelivery && order.delivery > 0 && <span className="text-[10px] text-slate-400 font-normal">(ค่าส่ง ฿{order.delivery})</span>}</span>
+      </div>
+
+      {/* Actions */}
+      <div className="pt-2 flex items-center justify-between gap-1.5">
+        <button onClick={() => regressOrderStatus(order.id)} disabled={order.status === "รอดำเนินการ"} className="p-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-slate-600 transition disabled:opacity-50 cursor-pointer">
           <RotateCcw size={13} />
         </button>
         <button onClick={() => advanceOrderStatus(order.id)} className={`flex-1 py-1.5 rounded-xl text-[11px] font-black tracking-wide shadow-sm transition flex items-center justify-center gap-1 cursor-pointer ${nextBtnColor}`}>
           <Check size={11} />
           <span>{nextBtnText}</span>
         </button>
-        <button onClick={() => cancelOrder(order.id)} className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-100 rounded-xl text-red-600 transition">
+        <button onClick={() => cancelOrder(order.id)} className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-100 rounded-xl text-red-600 transition cursor-pointer">
           <Trash2 size={13} />
         </button>
       </div>

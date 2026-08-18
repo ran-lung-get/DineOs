@@ -117,3 +117,14 @@ button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* WebAvatar Open/Close Visibility Control */
+body.avatar-hidden body > div:not(#root) canvas,
+body.avatar-hidden [class*="bcw"] canvas,
+body.avatar-hidden [id*="bcw"] canvas,
+body.avatar-hidden .bcw-avatar-container {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
