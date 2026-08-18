@@ -274,6 +274,101 @@ export async function syncAuthUserToSupabase(authUser: SupabaseAuthUser): Promis
 }
 
 /**
+ * ดึงหรือสร้าง User และ Customer สำหรับ Guest / Walk-in หรือ Fallback
+ */
+export async function getOrCreateGuestUserAndCustomer(): Promise<{
+  user: UserRow;
+  customer: CustomerRow;
+}> {
+  const client = supabase as any;
+  const now = new Date().toISOString();
+  const guestLineId = "guest_walkin_user";
+
+  try {
+    // 1. ตรวจสอบว่ามี Guest User อยู่แล้วหรือไม่
+    const { data: existingUser } = await client
+      .from("users")
+      .select("*")
+      .eq("line_user_id", guestLineId)
+      .maybeSingle();
+
+    if (existingUser) {
+      const { data: existingCustomer } = await client
+        .from("customers")
+        .select("*")
+        .eq("user_id", existingUser.id)
+        .maybeSingle();
+
+      if (existingCustomer) {
+        return { user: existingUser as UserRow, customer: existingCustomer as CustomerRow };
+      }
+    }
+
+    // 2. สร้าง Guest User ใหม่
+    const { data: newUser, error: userError } = await client
+      .from("users")
+      .upsert(
+        {
+          line_user_id: guestLineId,
+          display_name: "ลูกค้าทั่วไป (หน้าร้าน)",
+          role: "customer",
+          is_active: true,
+          updated_at: now,
+          last_login_at: now,
+        },
+        { onConflict: "line_user_id" }
+      )
+      .select()
+      .single();
+
+    if (userError || !newUser) {
+      console.warn("[Supabase] Failed to upsert guest user, trying fallback:", userError);
+      const { data: anyUsers } = await client.from("users").select("*").limit(1);
+      const { data: anyCusts } = await client.from("customers").select("*").limit(1);
+      if (anyUsers?.[0] && anyCusts?.[0]) {
+        return { user: anyUsers[0], customer: anyCusts[0] };
+      }
+      throw userError || new Error("No user available in Supabase");
+    }
+
+    // 3. สร้าง Guest Customer ใหม่
+    const { data: newCustomer, error: custError } = await client
+      .from("customers")
+      .upsert(
+        {
+          user_id: newUser.id,
+          line_user_id: guestLineId,
+          display_name: "ลูกค้าทั่วไป (หน้าร้าน)",
+          updated_at: now,
+        },
+        { onConflict: "user_id" }
+      )
+      .select()
+      .single();
+
+    if (custError || !newCustomer) {
+      console.warn("[Supabase] Failed to upsert guest customer, trying fallback:", custError);
+      const { data: anyCusts } = await client.from("customers").select("*").limit(1);
+      if (anyCusts?.[0]) {
+        return { user: newUser as UserRow, customer: anyCusts[0] };
+      }
+      throw custError || new Error("No customer available in Supabase");
+    }
+
+    return { user: newUser as UserRow, customer: newCustomer as CustomerRow };
+  } catch (err) {
+    console.error("[Supabase] getOrCreateGuestUserAndCustomer exception:", err);
+    // Ultimate fallback to any user in DB
+    const { data: anyUsers } = await client.from("users").select("*").limit(1);
+    const { data: anyCusts } = await client.from("customers").select("*").limit(1);
+    if (anyUsers?.[0] && anyCusts?.[0]) {
+      return { user: anyUsers[0], customer: anyCusts[0] };
+    }
+    throw err;
+  }
+}
+
+/**
  * ดึงรายการวัตถุดิบทั้งหมดจาก Supabase
  */
 export async function getIngredients() {

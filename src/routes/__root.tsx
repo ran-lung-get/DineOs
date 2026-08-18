@@ -12,7 +12,6 @@ import { useEffect, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "../lib/supabase";
 import { LanguageProvider } from "../lib/i18n";
 
@@ -41,9 +40,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -60,7 +56,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 cursor-pointer"
           >
             Try again
           </button>
@@ -81,18 +77,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "A mobile-first React web app for LINE LIFF food delivery, featuring a minimalist design and intuitive navigation." },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "A mobile-first React web app for LINE LIFF food delivery, featuring a minimalist design and intuitive navigation." },
+      { title: "ร้านลุงเกตุ | Ran Lung Get" },
+      { name: "description", content: "ระบบสั่งอาหารออนไลน์ ร้านลุงเกตุ อาหารตามสั่ง รวดเร็ว สดใหม่ รสชาติเข้มข้นถึงเครื่อง" },
+      { name: "author", content: "ร้านลุงเกตุ" },
+      { property: "og:title", content: "ร้านลุงเกตุ | Ran Lung Get" },
+      { property: "og:description", content: "ระบบสั่งอาหารออนไลน์ ร้านลุงเกตุ อาหารตามสั่ง รวดเร็ว สดใหม่ รสชาติเข้มข้นถึงเครื่อง" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "Lovable App" },
-      { name: "twitter:description", content: "A mobile-first React web app for LINE LIFF food delivery, featuring a minimalist design and intuitive navigation." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7f1ddf64-af89-4dbe-8331-802eb463acb3/id-preview-39d7dc68--7b87f1b8-481d-40c1-a507-b9601d300c39.lovable.app-1781499966608.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7f1ddf64-af89-4dbe-8331-802eb463acb3/id-preview-39d7dc68--7b87f1b8-481d-40c1-a507-b9601d300c39.lovable.app-1781499966608.png" },
+      { name: "twitter:title", content: "ร้านลุงเกตุ | Ran Lung Get" },
+      { name: "twitter:description", content: "ระบบสั่งอาหารออนไลน์ ร้านลุงเกตุ อาหารตามสั่ง รวดเร็ว สดใหม่ รสชาติเข้มข้นถึงเครื่อง" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

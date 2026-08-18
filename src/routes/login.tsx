@@ -32,14 +32,14 @@ function LoginPage() {
   const [nickname, setNickname] = useState("");
   const [phone, setPhone] = useState("");
   const [gender, setGender] = useState<"male" | "female" | "">("");
-  const [role, setRole] = useState<"customer" | "staff" | "admin" | "captain">("customer");
+  const [role, setRole] = useState<"customer" | "staff" | "admin">("customer");
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
   const [session, setSession] = useState<any>(null);
   const emailRef = useRef<HTMLInputElement>(null);
-  const [hoveredRole, setHoveredRole] = useState<"customer" | "staff" | "admin" | "captain" | null>(null);
+  const [hoveredRole, setHoveredRole] = useState<"customer" | "staff" | "admin" | null>(null);
   const [hoveredGuest, setHoveredGuest] = useState(false);
 
   // ── check if already logged in ────────────────────────────────
@@ -149,7 +149,7 @@ function LoginPage() {
                   display_name: nickname.trim(),
                   email: data.user.email,
                   role,
-                  is_active: (role === "admin" || role === "captain" || role === "staff") ? false : true,
+                  is_active: (role === "admin" || role === "staff") ? false : true,
                   updated_at: now,
                   last_login_at: now,
                 },
@@ -591,18 +591,17 @@ function LoginPage() {
                       <label className="text-xs font-semibold" style={{ color: INK_MUTED }}>
                         สมัครในฐานะ
                       </label>
-                      <div className="grid grid-cols-2 gap-2.5">
+                      <div className="grid grid-cols-3 gap-2">
                         {(
                           [
-                            { value: "captain", label: "กัปตัน", desc: "สูงสุด", Icon: ShieldAlert },
-                            { value: "admin", label: "แอดมิน", desc: "จัดการระบบ", Icon: Headset },
+                            { value: "customer", label: "ลูกค้า", desc: "สั่งอาหาร", Icon: User },
                             {
                               value: "staff",
                               label: "พนักงาน",
                               desc: "จัดการออเดอร์",
                               Icon: ChefHat,
                             },
-                            { value: "customer", label: "ลูกค้า", desc: "สั่งอาหาร", Icon: User },
+                            { value: "admin", label: "แอดมิน", desc: "จัดการระบบ", Icon: Headset },
                           ] as const
                         ).map((r) => (
                           <button
