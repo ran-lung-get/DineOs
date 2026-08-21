@@ -21,14 +21,20 @@ interface AdminDashboardViewProps {
   loading: boolean;
 }
 
-export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps) {
+export function AdminDashboardView({ orders = [], loading }: AdminDashboardViewProps) {
   const [timeRange, setTimeRange] = useState<"today" | "7days" | "30days" | "all">("all");
+
+  const safeOrders = Array.isArray(orders) ? orders : [];
 
   const filteredOrders = useMemo(() => {
     const now = new Date();
-    return orders.filter((o) => {
-      if (!o.created_at) return true;
-      const orderDate = new Date(o.created_at);
+    return safeOrders.filter((o) => {
+      if (!o) return false;
+      const dateStr = o.created_at || o.createdAt || o.date;
+      if (!dateStr) return true;
+      const orderDate = new Date(dateStr);
+      if (isNaN(orderDate.getTime())) return true;
+
       const diffTime = now.getTime() - orderDate.getTime();
       const diffDays = diffTime / (1000 * 60 * 60 * 24);
 
@@ -43,21 +49,30 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
       }
       return true;
     });
-  }, [orders, timeRange]);
+  }, [safeOrders, timeRange]);
 
   const stats = useMemo(() => {
     const totalOrders = filteredOrders.length;
-    const totalRev = filteredOrders.reduce((sum, o) => sum + o.total, 0);
+    const totalRev = filteredOrders.reduce(
+      (sum, o) => sum + (Number(o?.total) || Number(o?.total_amount) || 0),
+      0,
+    );
     const avgBill = totalOrders > 0 ? Math.round(totalRev / totalOrders) : 0;
-    const uniqueCustomers = new Set(filteredOrders.map((o) => o.customerName || o.id)).size;
+    const uniqueCustomers = new Set(
+      filteredOrders.map((o) => o?.customerName || o?.customer_name || o?.id || "anon"),
+    ).size;
 
     // Popular products counter
     const itemsCount: Record<string, number> = {};
     filteredOrders.forEach((o) => {
-      o.items?.forEach((item: any) => {
-        const cleanName = item.name.split(" (")[0];
-        itemsCount[cleanName] = (itemsCount[cleanName] || 0) + item.qty;
-      });
+      if (Array.isArray(o?.items)) {
+        o.items.forEach((item: any) => {
+          const rawName = item?.name || item?.itemName || "เมนูอาหาร";
+          const cleanName = String(rawName).split(" (")[0];
+          const qty = Number(item?.qty) || Number(item?.quantity) || 1;
+          itemsCount[cleanName] = (itemsCount[cleanName] || 0) + qty;
+        });
+      }
     });
 
     const sortedProducts = Object.entries(itemsCount)
@@ -78,11 +93,14 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
         dataMap[hourStr] = 0;
       }
       filteredOrders.forEach((o) => {
-        if (!o.created_at) return;
-        const d = new Date(o.created_at);
+        const dStr = o?.created_at || o?.createdAt || o?.date;
+        if (!dStr) return;
+        const d = new Date(dStr);
+        if (isNaN(d.getTime())) return;
         const hourStr = `${String(d.getHours()).padStart(2, "0")}:00`;
+        const val = Number(o?.total) || Number(o?.total_amount) || 0;
         if (dataMap[hourStr] !== undefined) {
-          dataMap[hourStr] = (dataMap[hourStr] || 0) + o.total;
+          dataMap[hourStr] = (dataMap[hourStr] || 0) + val;
         }
       });
     } else if (timeRange === "7days") {
@@ -94,11 +112,14 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
         dataMap[dateStr] = 0;
       }
       filteredOrders.forEach((o) => {
-        if (!o.created_at) return;
-        const d = new Date(o.created_at);
+        const dStr = o?.created_at || o?.createdAt || o?.date;
+        if (!dStr) return;
+        const d = new Date(dStr);
+        if (isNaN(d.getTime())) return;
         const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+        const val = Number(o?.total) || Number(o?.total_amount) || 0;
         if (dataMap[dateStr] !== undefined) {
-          dataMap[dateStr] = (dataMap[dateStr] || 0) + o.total;
+          dataMap[dateStr] = (dataMap[dateStr] || 0) + val;
         }
       });
     } else if (timeRange === "30days") {
@@ -110,11 +131,14 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
         dataMap[dateStr] = 0;
       }
       filteredOrders.forEach((o) => {
-        if (!o.created_at) return;
-        const d = new Date(o.created_at);
+        const dStr = o?.created_at || o?.createdAt || o?.date;
+        if (!dStr) return;
+        const d = new Date(dStr);
+        if (isNaN(d.getTime())) return;
         const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+        const val = Number(o?.total) || Number(o?.total_amount) || 0;
         if (dataMap[dateStr] !== undefined) {
-          dataMap[dateStr] = (dataMap[dateStr] || 0) + o.total;
+          dataMap[dateStr] = (dataMap[dateStr] || 0) + val;
         }
       });
     } else {
@@ -123,19 +147,23 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
         .slice()
         .reverse()
         .forEach((o) => {
-          if (!o.created_at) return;
-          const d = new Date(o.created_at);
+          const dStr = o?.created_at || o?.createdAt || o?.date;
+          if (!dStr) return;
+          const d = new Date(dStr);
+          if (isNaN(d.getTime())) return;
           const dateStr = d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-          dataMap[dateStr] = (dataMap[dateStr] || 0) + o.total;
+          const val = Number(o?.total) || Number(o?.total_amount) || 0;
+          dataMap[dateStr] = (dataMap[dateStr] || 0) + val;
         });
     }
 
-    return Object.entries(dataMap).map(([name, value]) => ({ name, value }));
+    const result = Object.entries(dataMap).map(([name, value]) => ({ name, value }));
+    return result.length > 0 ? result : [{ name: "วันนี้", value: 0 }];
   }, [filteredOrders, timeRange]);
 
   if (loading) {
     return (
-      <div className="text-center py-20 font-bold text-gray-500">กำลังดาวน์โหลดข้อมูลการขาย...</div>
+      <div className="text-center py-20 font-bold text-slate-500">กำลังดาวน์โหลดข้อมูลการขาย...</div>
     );
   }
 
@@ -302,7 +330,7 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
             </div>
           </div>
 
-          {/* 5 Recent Orders (Table styled like screenshot) */}
+          {/* 5 Recent Orders */}
           <div className="bg-white border border-[#ece4d6] rounded-[28px] p-5 shadow-sm">
             <h3 className="font-black text-sm text-[#002e47] mb-4">🧾 5 ออเดอร์ล่าสุด</h3>
             <div className="overflow-x-auto">
@@ -323,26 +351,40 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
                       </td>
                     </tr>
                   ) : (
-                    filteredOrders.slice(0, 5).map((o) => {
-                      const isDineIn = o.orderType === "dine-in";
-                      const isTakeaway = o.orderType === "takeaway";
+                    filteredOrders.slice(0, 5).map((o, idx) => {
+                      const isDineIn = o?.orderType === "dine-in" || o?.order_type === "dine-in";
+                      const isTakeaway = o?.orderType === "takeaway" || o?.order_type === "takeaway";
+                      const tableNum = o?.tableNumber || o?.table_number;
+                      const orderNum = o?.orderNumber || o?.order_number || (o?.id ? String(o.id).slice(-4) : `#${idx + 1}`);
+
+                      let dateText = "-";
+                      if (o?.date && typeof o.date === "string") {
+                        dateText = o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date;
+                      } else if (o?.created_at || o?.createdAt) {
+                        try {
+                          dateText = new Date(o.created_at || o.createdAt).toLocaleTimeString("th-TH", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                        } catch {}
+                      }
 
                       let badgeLabel = "เดลิเวอรี่";
                       let badgeColor = "bg-blue-50 text-blue-800 border-blue-100";
                       if (isDineIn) {
-                        badgeLabel = o.tableNumber ? `โต๊ะ ${o.tableNumber}` : "ทานที่ร้าน";
+                        badgeLabel = tableNum ? `โต๊ะ ${tableNum}` : "ทานที่ร้าน";
                         badgeColor = "bg-amber-50 text-amber-800 border-amber-100";
                       } else if (isTakeaway) {
                         badgeLabel = "กลับบ้าน";
                         badgeColor = "bg-emerald-50 text-emerald-800 border-emerald-100";
                       }
 
+                      const orderTotal = Number(o?.total) || Number(o?.total_amount) || 0;
+
                       return (
-                        <tr key={o.id} className="hover:bg-slate-50/40 transition">
-                          <td className="py-3.5 font-black text-[#002e47]">{o.orderNumber}</td>
-                          <td className="py-3.5 text-slate-400">
-                            {o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date}
-                          </td>
+                        <tr key={o?.id || idx} className="hover:bg-slate-50/40 transition">
+                          <td className="py-3.5 font-black text-[#002e47]">{orderNum}</td>
+                          <td className="py-3.5 text-slate-400">{dateText}</td>
                           <td className="py-3.5">
                             <span
                               className={`px-2 py-0.5 rounded-lg text-[9px] font-black border ${badgeColor}`}
@@ -351,7 +393,7 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
                             </span>
                           </td>
                           <td className="py-3.5 text-right font-black text-[#002e47]">
-                            ฿{o.total}
+                            ฿{orderTotal}
                           </td>
                         </tr>
                       );
@@ -383,22 +425,34 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
                     </tr>
                   ) : (
                     filteredOrders.slice(0, 5).map((o, idx) => {
-                      const isDineIn = o.orderType === "dine-in";
+                      const isDineIn = o?.orderType === "dine-in" || o?.order_type === "dine-in";
+                      const isTakeaway = o?.orderType === "takeaway" || o?.order_type === "takeaway";
+                      const tableNum = o?.tableNumber || o?.table_number;
+                      const custName = o?.customerName || o?.customer_name || "คุณลูกค้า";
+
+                      let dateText = "-";
+                      if (o?.date && typeof o.date === "string") {
+                        dateText = o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date;
+                      } else if (o?.created_at || o?.createdAt) {
+                        try {
+                          dateText = new Date(o.created_at || o.createdAt).toLocaleTimeString("th-TH", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                        } catch {}
+                      }
+
                       return (
                         <tr key={idx} className="hover:bg-slate-50/40 transition">
-                          <td className="py-3.5 font-black text-[#002e47]">
-                            {o.customerName || "คุณลูกค้า"}
-                          </td>
+                          <td className="py-3.5 font-black text-[#002e47]">{custName}</td>
                           <td className="py-3.5 text-slate-500 font-bold">
                             {isDineIn
-                              ? `ทานที่ร้าน (โต๊ะ ${o.tableNumber || "-"})`
-                              : o.orderType === "takeaway"
+                              ? `ทานที่ร้าน (โต๊ะ ${tableNum || "-"})`
+                              : isTakeaway
                                 ? "กลับบ้าน (Takeaway)"
                                 : "จัดส่ง (Delivery)"}
                           </td>
-                          <td className="py-3.5 text-right text-slate-400">
-                            {o.date.includes(" · ") ? o.date.split(" · ")[1] : o.date}
-                          </td>
+                          <td className="py-3.5 text-right text-slate-400">{dateText}</td>
                         </tr>
                       );
                     })
@@ -430,7 +484,7 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
                     <div key={idx} className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs font-black text-[#002e47]">
                         <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-amber-400 text-white flex items-center justify-center font-black text-[10px]">
+                          <span className="w-5 h-5 rounded-full bg-[#002e47] text-[#fcc14a] flex items-center justify-center font-black text-[10px]">
                             {idx + 1}
                           </span>
                           <span className="truncate max-w-[140px]">{p.name}</span>
@@ -438,7 +492,7 @@ export function AdminDashboardView({ orders, loading }: AdminDashboardViewProps)
                         <span className="text-[#002e47]">{p.count} จาน</span>
                       </div>
 
-                      {/* Dark Blue Progress bar */}
+                      {/* Progress bar */}
                       <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                         <div
                           className="bg-[#002e47] h-full rounded-full transition-all duration-500"

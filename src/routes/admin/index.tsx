@@ -78,7 +78,11 @@ function AdminDashboard() {
       return;
     }
     if (user.role !== "admin") {
-      navigate({ to: "/customer" });
+      if (user.role === "staff") {
+        navigate({ to: "/staff" });
+      } else {
+        navigate({ to: "/customer" });
+      }
       return;
     }
     setCheckingAuth(false);
