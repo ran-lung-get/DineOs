@@ -25,10 +25,10 @@ export function KitchenSidebar({
           </div>
           <div>
             <h2 className="font-black text-sm tracking-tight text-white uppercase">
-              ระบบจัดการครัว
+              ระบบจัดการครัว Dineos
             </h2>
             <p className="text-[9px] font-bold text-[#fcc14a] tracking-wider uppercase">
-              KITCHEN MONITOR (STAFF)
+              DINEOS KITCHEN MONITOR
             </p>
           </div>
         </div>
@@ -126,19 +126,21 @@ export function KitchenSidebar({
           </button>
 
           {/* สั่งอาหาร (หน้าลูกค้า) */}
-          <a
-            href="/customer"
-            onClick={(e) => {
-              e.preventDefault();
-              localStorage.removeItem("ran-lung-get-staff-token");
-              if (onClose) onClose();
-              window.location.href = "/customer";
-            }}
-            className="w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-left text-white/70 hover:text-white hover:bg-white/5 font-medium transition duration-200 cursor-pointer border-l-4 border-transparent"
-          >
-            <Home size={18} className="text-white/60" />
-            <span className="text-sm">สั่งอาหาร (หน้าลูกค้า)</span>
-          </a>
+          <div className="pt-4 mt-4 border-t border-white/10">
+            <a
+              href="/customer"
+              onClick={(e) => {
+                e.preventDefault();
+                localStorage.removeItem("dineos-staff-token");
+                if (onClose) onClose();
+                window.location.href = "/customer";
+              }}
+              className="w-full flex items-center gap-3 px-3 py-3.5 rounded-xl text-left text-white/70 hover:text-white hover:bg-white/5 font-medium transition duration-200 cursor-pointer border-l-4 border-transparent"
+            >
+              <Home size={18} className="text-white/60" />
+              <span className="text-sm">สั่งอาหาร (หน้าลูกค้า)</span>
+            </a>
+          </div>
         </div>
       </div>
 
@@ -151,7 +153,7 @@ export function KitchenSidebar({
           <LogOut size={16} /> ออกจากระบบ
         </button>
         <p className="text-[9px] text-white/40 text-center font-semibold mt-1">
-          ระบบจัดการร้านค้า v1.2.0 · ครัวลุงเกตุ
+          Dineos v2.0 · Smart Kitchen System
         </p>
       </div>
     </div>

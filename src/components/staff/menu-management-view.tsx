@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { supabase } from "../../lib/supabase";
 import { MENU } from "../../constants/menu.data";
 import { type MenuItemDB, type OptionGroup, type Addon } from "../../types";
+import {
+  getMongoMenuItems,
+  saveMongoMenuItem,
+  deleteMongoMenuItem,
+} from "../../lib/api/mongo.functions";
 import {
   Search,
   Plus,
@@ -54,14 +58,25 @@ export function MenuManagementView() {
   const fetchMenuItems = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("menu_items")
-        .select("*")
-        .order("sort_order", { ascending: true });
-      if (!error && data) {
-        setMenuItems(data as MenuItemDB[]);
+      const res = await getMongoMenuItems();
+      if (res.success && res.data && res.data.length > 0) {
+        const mapped: MenuItemDB[] = res.data.map((m: any, i: number) => ({
+          id: m.id || `m_${i}`,
+          name: m.name,
+          description: m.desc || m.description || "",
+          price: Number(m.price),
+          image: m.image || "",
+          image_url: m.image_url || m.image || null,
+          category: m.category,
+          is_available: m.isAvailable ?? m.is_available ?? true,
+          is_spicy: m.isSpicy ?? m.is_spicy ?? false,
+          sort_order: m.sort_order ?? i,
+          options: m.options || null,
+          addons: m.addons || null,
+          staff_note: m.staff_note || null,
+        }));
+        setMenuItems(mapped);
       } else {
-        // Fallback to local MENU constant
         const fallback: MenuItemDB[] = MENU.map((m, i) => ({
           id: m.id,
           name: m.name,
@@ -103,32 +118,6 @@ export function MenuManagementView() {
 
   useEffect(() => {
     fetchMenuItems();
-    const ch = supabase
-      .channel("menu-items-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "menu_items" },
-        (payload: any) => {
-          if (payload.eventType === "DELETE") {
-            setMenuItems((prev) => prev.filter((m) => m.id !== payload.old.id));
-          } else if (payload.eventType === "INSERT") {
-            setMenuItems((prev) => {
-              if (prev.some((m) => m.id === payload.new.id)) return prev;
-              return [...prev, payload.new as MenuItemDB].sort(
-                (a, b) => a.sort_order - b.sort_order,
-              );
-            });
-          } else if (payload.eventType === "UPDATE") {
-            setMenuItems((prev) =>
-              prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)),
-            );
-          }
-        },
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(ch);
-    };
   }, []);
 
   const openAddForm = () => {
@@ -180,21 +169,14 @@ export function MenuManagementView() {
   const handleImageUpload = async (file: File) => {
     setUploadingImage(true);
     try {
-      const ext = file.name.split(".").pop();
-      const fileName = `menu_${Date.now()}.${ext}`;
-      const { data, error } = await supabase.storage
-        .from("menu-images")
-        .upload(fileName, file, { upsert: true, contentType: file.type });
-      if (error) throw error;
-      const { data: urlData } = supabase.storage.from("menu-images").getPublicUrl(data.path);
-      setFormImageUrl(urlData.publicUrl);
-    } catch (e: any) {
-      console.warn("Image upload failed:", e?.message);
-      // Use local preview as fallback
       const reader = new FileReader();
-      reader.onload = (ev) => setFormImageUrl(ev.target?.result as string);
+      reader.onload = (ev) => {
+        setFormImageUrl(ev.target?.result as string);
+        setUploadingImage(false);
+      };
       reader.readAsDataURL(file);
-    } finally {
+    } catch (e: any) {
+      console.warn("Image preview failed:", e?.message);
       setUploadingImage(false);
     }
   };
@@ -215,43 +197,42 @@ export function MenuManagementView() {
     if (!formName.trim() || !formPrice) return;
     setSaving(true);
     const price = parseFloat(formPrice);
+    const id = editItem ? editItem.id : generateId(formName);
     const payload: any = {
+      id,
       name: formName.trim(),
-      description: formDesc.trim() || null,
+      desc: formDesc.trim() || undefined,
       price,
       category: formCategory,
-      is_spicy: formIsSpicy,
-      is_available: editItem ? editItem.is_available : true,
-      image: formImagePath || null,
-      image_url: formImageUrl || null,
-      options: formOptions.length > 0 ? formOptions : null,
-      addons: formAddons.length > 0 ? formAddons : null,
-      staff_note: formStaffNote.trim() || null,
-      sort_order: editItem ? editItem.sort_order : menuItems.length,
+      isSpicy: formIsSpicy,
+      isAvailable: editItem ? editItem.is_available : true,
+      image: formImageUrl || formImagePath || "/thai_food_hero.jpg",
+      options: formOptions.length > 0 ? formOptions : undefined,
+      addons: formAddons.length > 0 ? formAddons : undefined,
     };
 
     try {
+      await saveMongoMenuItem({ data: payload });
+      const updatedItem: MenuItemDB = {
+        id,
+        name: payload.name,
+        description: payload.desc || "",
+        price: payload.price,
+        image: payload.image,
+        image_url: payload.image,
+        category: payload.category,
+        is_available: payload.isAvailable,
+        is_spicy: payload.isSpicy,
+        sort_order: editItem ? editItem.sort_order : menuItems.length,
+        options: payload.options || null,
+        addons: payload.addons || null,
+        staff_note: formStaffNote.trim() || null,
+      };
+
       if (editItem) {
-        const { error } = await supabase
-          .from("menu_items")
-          .update(payload)
-          .eq("id", editItem.id);
-        if (error) throw error;
-        setMenuItems((prev) =>
-          prev.map((m) => (m.id === editItem.id ? { ...m, ...payload } : m)),
-        );
+        setMenuItems((prev) => prev.map((m) => (m.id === id ? updatedItem : m)));
       } else {
-        const newId = generateId(formName);
-        const { data, error } = await supabase
-          .from("menu_items")
-          .insert({ ...payload, id: newId })
-          .select()
-          .single();
-        if (error) throw error;
-        setMenuItems((prev) => {
-          if (prev.some((m) => m.id === data.id)) return prev;
-          return [...prev, data as MenuItemDB].sort((a, b) => a.sort_order - b.sort_order);
-        });
+        setMenuItems((prev) => [...prev, updatedItem]);
       }
       setIsFormOpen(false);
     } catch (e: any) {
@@ -264,8 +245,7 @@ export function MenuManagementView() {
   const deleteMenuItem = async (item: MenuItemDB) => {
     if (!confirm(`คุณต้องการลบเมนู "${item.name}" ออกจากระบบใช่หรือไม่?`)) return;
     try {
-      const { error } = await supabase.from("menu_items").delete().eq("id", item.id);
-      if (error) throw error;
+      await deleteMongoMenuItem({ data: { id: item.id } });
       setMenuItems((prev) => prev.filter((m) => m.id !== item.id));
       if (isFormOpen && editItem?.id === item.id) setIsFormOpen(false);
     } catch (e: any) {
@@ -279,7 +259,18 @@ export function MenuManagementView() {
       prev.map((m) => (m.id === item.id ? { ...m, is_available: next } : m)),
     );
     try {
-      await supabase.from("menu_items").update({ is_available: next }).eq("id", item.id);
+      await saveMongoMenuItem({
+        data: {
+          id: item.id,
+          name: item.name,
+          desc: item.description || undefined,
+          price: item.price,
+          image: item.image || item.image_url || "/thai_food_hero.jpg",
+          category: item.category,
+          isAvailable: next,
+          isSpicy: item.is_spicy,
+        },
+      });
     } catch {}
   };
 

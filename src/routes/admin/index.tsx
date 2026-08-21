@@ -1,32 +1,30 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, useEffect, useRef } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { supabase } from "../../lib/supabase";
-import {
-  getIngredients,
-  updateIngredientStock,
-  addIngredient,
-  deleteIngredient,
-} from "../../lib/supabase.service";
+import { useMemo, useState, useEffect } from "react";
 import { MENU, type MenuItem } from "../customer/index";
 import {
   ChefHat,
-  LayoutDashboard,
-  ClipboardList,
-  Users,
-  LogOut,
-  ArrowLeft,
-  Check,
-  X,
   Menu,
 } from "lucide-react";
 
-import { BRAND, GOLD, INK_MUTED, LINEN, SURFACE } from "../../constants/theme";
-import { getTimestampFromOrderId } from "../../lib/utils";
 import { AdminSidebar, type AdminTab } from "../../components/admin/admin-sidebar";
 import { AdminDashboardView } from "../../components/admin/admin-dashboard-view";
 import { AdminInventoryView } from "../../components/admin/admin-inventory-view";
 import { AdminStaffView } from "../../components/admin/admin-staff-view";
+import {
+  getMongoOrders,
+  getMongoIngredients,
+  getMongoMenuItems,
+  saveMongoIngredient,
+  deleteMongoIngredient,
+  updateMongoIngredientStock,
+} from "../../lib/api/mongo.functions";
+import {
+  getMongoStaffUsers,
+  updateMongoUserStatus,
+  updateMongoUserRole,
+  deleteMongoUser,
+} from "../../lib/api/auth.functions";
+import { getStoredUser, clearStoredUser } from "../../lib/auth";
 
 export const Route = createFileRoute("/admin/")({
   component: AdminDashboard,
@@ -36,11 +34,9 @@ function AdminDashboard() {
   const navigate = useNavigate();
   const [view, setView] = useState<AdminTab>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [soundEnabled] = useState(true);
 
   // Auth check state
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [adminUser, setAdminUser] = useState<any>(null);
 
   // Dashboard state
   const [orders, setOrders] = useState<any[]>([]);
@@ -76,548 +72,315 @@ function AdminDashboard() {
 
   // 1. Verify Admin Auth
   useEffect(() => {
-    async function checkAuth() {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session) {
-          window.location.href = "/login";
-          return;
-        }
-
-        // Fetch role from users table
-        const { data, error } = await supabase
-          .from("users")
-          .select("*")
-          .eq("auth_user_id", session.user.id)
-          .maybeSingle();
-
-        if (error || !data || data.role !== "admin") {
-          // If not admin, send to customer page (or warn them)
-          console.warn("Unauthorized access: admin role required");
-          window.location.href = "/customer";
-          return;
-        }
-
-        if (data.is_active === false) {
-          alert("บัญชีแอดมินของคุณอยู่ระหว่างรอการอนุมัติสิทธิ์ (Pending Approval)");
-          await supabase.auth.signOut();
-          window.location.href = "/login";
-          return;
-        }
-
-        setAdminUser(data);
-      } catch (err) {
-        console.error("Auth check failed:", err);
-        window.location.href = "/customer";
-      } finally {
-        setCheckingAuth(false);
-      }
+    const user = getStoredUser();
+    if (!user) {
+      navigate({ to: "/login" });
+      return;
     }
-    checkAuth();
-  }, []);
+    if (user.role !== "admin") {
+      navigate({ to: "/customer" });
+      return;
+    }
+    setCheckingAuth(false);
+  }, [navigate]);
 
-  // 2. Fetch Orders (for Dashboard Stats)
-  const fetchSupabaseOrders = async () => {
+  // 2. Fetch Orders from MongoDB
+  const fetchOrders = async () => {
     setLoadingOrders(true);
     try {
-      const { data: dbOrders, error } = await supabase
-        .from("orders")
-        .select(
-          `
-          *,
-          customers (
-            display_name
-          ),
-          order_items (*)
-        `,
-        )
-        .order("created_at", { ascending: false });
-
-      if (!error && dbOrders) {
-        const mapped = dbOrders.map((o: any) => {
-          let localStatus = "รอดำเนินการ";
-          if (o.status === "pending") localStatus = "รอดำเนินการ";
-          else if (o.status === "preparing") localStatus = "กำลังทำ";
-          else if (o.status === "delivering") localStatus = "พร้อมเสิร์ฟ";
-          else if (o.status === "completed") localStatus = "สำเร็จ";
-          else if (o.status === "cancelled") localStatus = "ยกเลิก";
-
-          return {
-            id: o.id,
-            orderNumber: o.order_number,
-            date:
-              new Date(o.created_at).toLocaleDateString("th-TH", {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              }) +
-              " · " +
-              new Date(o.created_at).toLocaleTimeString("th-TH", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-            items: (o.order_items || []).map((item: any) => ({
-              name: item.name,
-              qty: item.quantity,
-              price: Number(item.unit_price),
-            })),
-            subtotal: Number(o.subtotal),
-            delivery: Number(o.delivery_fee),
-            total: Number(o.total),
-            status: localStatus,
-            orderType: o.order_type,
-            customerName: o.customers?.display_name || "คุณลูกค้า",
-            tableNumber: o.table_number || "",
-            queueNumber: o.queue_number || "",
-            note: o.special_instructions || "",
-            created_at: o.created_at,
-          };
-        });
-        setOrders(mapped);
+      const res = await getMongoOrders();
+      if (res.success && res.data && res.data.length > 0) {
+        setOrders(res.data);
+      } else {
+        const local = localStorage.getItem("ran-lung-get-orders");
+        if (local) {
+          try {
+            setOrders(JSON.parse(local));
+          } catch {}
+        }
       }
-    } catch (e) {
-      console.error("Failed to load orders:", e);
+    } catch (err) {
+      console.error("Error fetching orders:", err);
     } finally {
       setLoadingOrders(false);
     }
   };
 
-  // 3. Fetch Ingredients (for Stock view) — always reads directly from Supabase
-  const fetchIngredients = async () => {
+  // 3. Fetch Ingredients from MongoDB
+  const fetchIngredientsData = async () => {
     setLoadingIngredients(true);
     try {
-      const data = await getIngredients();
-      setIngredients(data ?? []);
+      const res = await getMongoIngredients();
+      if (res.success && res.data && res.data.length > 0) {
+        setIngredients(res.data);
+      } else {
+        const local = localStorage.getItem("ran-lung-get-mock-ingredients");
+        if (local) {
+          try {
+            setIngredients(JSON.parse(local));
+          } catch {}
+        }
+      }
     } catch (err) {
-      console.error("Load stock error:", err);
+      console.error("Error fetching ingredients:", err);
     } finally {
       setLoadingIngredients(false);
     }
   };
 
-  const fetchMenuItems = async () => {
+  // 4. Fetch Menu Items from MongoDB
+  const fetchMenuItemsData = async () => {
     setLoadingMenuItems(true);
     try {
-      const { data, error } = await supabase
-        .from("menu_items")
-        .select("*")
-        .order("sort_order", { ascending: true });
-
-      if (!error && data) {
-        const mapped = data.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          desc: item.description || "",
-          price: Number(item.price),
-          image: item.image_url || item.image || "",
-          category: item.category || "signature",
-          isAvailable: item.is_available ?? true,
-          isSpicy: item.is_spicy ?? false,
-          options: item.options || undefined,
-          addons: item.addons || undefined,
-        }));
-        setMenuItems(mapped);
+      const res = await getMongoMenuItems();
+      if (res.success && res.data && res.data.length > 0) {
+        setMenuItems(res.data as any);
       } else {
-        setMenuItems([]);
+        setMenuItems(MENU);
       }
     } catch (err) {
-      console.error("Load menu items error:", err);
-      setMenuItems([]);
+      console.error("Error loading menu:", err);
+      setMenuItems(MENU);
     } finally {
       setLoadingMenuItems(false);
     }
   };
 
-  // 4. Fetch Users (for Staff role controller)
+  // 5. Fetch Staff Users from MongoDB
   const fetchUsers = async () => {
     setLoadingUsers(true);
     try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (!error && data) {
-        setUsers(data);
-      } else {
-        // Mock fallback if DB schema doesn't match or fails
-        const mockUsers = [
-          {
-            id: "u-1",
-            display_name: "แอดมินลุงเกตุ",
-            email: "admin@lungget.com",
-            role: "admin",
-            is_active: true,
-            picture_url: null,
-          },
-          {
-            id: "u-2",
-            display_name: "สมศรี แม่ครัว",
-            email: "cook@lungget.com",
-            role: "staff",
-            is_active: true,
-            picture_url: null,
-          },
-          {
-            id: "u-3",
-            display_name: "นายสมชาย (ลูกค้า)",
-            email: "somchai@gmail.com",
-            role: "customer",
-            is_active: true,
-            picture_url: null,
-          },
-        ];
-        setUsers(mockUsers);
+      const res = await getMongoStaffUsers();
+      if (res.success && res.data) {
+        setUsers(res.data);
       }
-    } catch (e) {
-      console.error("Load users failed:", e);
+    } catch (err) {
+      console.error("Error fetching staff users:", err);
     } finally {
       setLoadingUsers(false);
     }
   };
 
-  // Initialize data on view change
   useEffect(() => {
-    if (checkingAuth) return;
-    if (view === "dashboard") {
-      fetchSupabaseOrders();
-    } else if (view === "inventory") {
-      fetchIngredients();
-      fetchMenuItems();
-      const savedOutOfStock = localStorage.getItem("ran-lung-get-out-of-stock-items");
-      if (savedOutOfStock) {
-        try {
-          setOutOfStockIds(JSON.parse(savedOutOfStock));
-        } catch {}
-      }
-    } else if (view === "staff" || view === "approvals") {
+    if (!checkingAuth) {
+      fetchOrders();
+      fetchIngredientsData();
+      fetchMenuItemsData();
       fetchUsers();
     }
-  }, [view, checkingAuth]);
-
-  // Realtime subscription for users table
-  useEffect(() => {
-    fetchUsers(); // Fetch initially so badge is accurate on load regardless of view
-
-    const channel = supabase
-      .channel("admin-users-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
-        fetchUsers();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  }, [checkingAuth]);
 
   // Handle Logout
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    clearStoredUser();
     navigate({ to: "/login" });
   };
 
-  // Role modification handlers
-  const updateUserRole = async (userId: string, newRole: "admin" | "staff" | "customer") => {
-    // Optimistic UI update
+  // Staff management actions
+  const handleUpdateRole = async (userId: string, newRole: string) => {
     setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u)));
     try {
-      const { error } = await supabase.from("users").update({ role: newRole }).eq("id", userId);
-      if (error) throw error;
+      await updateMongoUserRole({ data: { userId, role: newRole as any } });
     } catch (err) {
-      console.warn("Supabase role update failed, keeping optimistic local edit:", err);
+      console.error("Error updating user role:", err);
     }
   };
 
-  const toggleUserActiveStatus = async (userId: string, currentStatus: boolean) => {
-    const nextStatus = !currentStatus;
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: nextStatus } : u)));
+  const handleToggleActive = async (userId: string, currentActive: boolean) => {
+    const nextVal = !currentActive;
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, is_active: nextVal } : u)));
     try {
-      const { error } = await supabase
-        .from("users")
-        .update({ is_active: nextStatus })
-        .eq("id", userId);
-      if (error) throw error;
+      await updateMongoUserStatus({ data: { userId, isActive: nextVal } });
     } catch (err) {
-      console.warn("Supabase active toggle failed:", err);
+      console.error("Error updating user status:", err);
     }
   };
 
-  const deleteUser = async (userId: string, displayName: string) => {
-    if (!confirm(`คุณต้องการลบผู้ใช้งาน "${displayName}" ใช่หรือไม่?`)) return;
-    const previousUsers = [...users];
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้นี้ออกจากระบบ?")) return;
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     try {
-      const { error } = await supabase.from("users").delete().eq("id", userId);
-      if (error) throw error;
-    } catch (err: any) {
-      console.error("Supabase user deletion failed, rolling back:", err);
-      alert(
-        `ไม่สามารถลบผู้ใช้ได้: ${err?.message || "กรุณาตรวจสอบว่าผู้ใช้นี้มีประวัติคำสั่งซื้ออยู่หรือไม่"}`,
-      );
-      setUsers(previousUsers);
+      await deleteMongoUser({ data: { userId } });
+    } catch (err) {
+      console.error("Error deleting user:", err);
     }
   };
 
-  // Inventory logic copy from staff
-  const toggleStock = (itemId: string) => {
-    let updated: string[];
-    if (outOfStockIds.includes(itemId)) {
-      updated = outOfStockIds.filter((id) => id !== itemId);
-    } else {
-      updated = [...outOfStockIds, itemId];
-    }
-    setOutOfStockIds(updated);
-    localStorage.setItem("ran-lung-get-out-of-stock-items", JSON.stringify(updated));
-    window.dispatchEvent(
-      new StorageEvent("storage", {
-        key: "ran-lung-get-out-of-stock-items",
-        newValue: JSON.stringify(updated),
-      }),
-    );
-  };
-
-  const adjustIngredientQty = async (id: string, amount: number) => {
-    const item = ingredients.find((i) => i.id === id);
-    if (!item) return;
-    const newQty = Math.max(0, Number(item.quantity) + amount);
-
-    // Optimistic update for instant UI feedback
-    setIngredients((prev) => prev.map((i) => (i.id === id ? { ...i, quantity: newQty } : i)));
-
-    try {
-      await updateIngredientStock(id, newQty);
-    } catch {
-      console.warn("Supabase stock update failed — reverting.");
-      // Revert optimistic update on failure
-      setIngredients((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, quantity: item.quantity } : i)),
-      );
-    }
-  };
-
+  // Ingredients management handlers
   const handleAddIngredientSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const q = parseFloat(newIngQty);
-    const t = parseFloat(newIngThreshold);
-    if (!newIngName.trim() || isNaN(q) || isNaN(t)) {
-      alert("กรุณากรอกข้อมูลให้ครบถ้วนและถูกต้อง");
+    if (!newIngName || !newIngQty) {
+      alert("กรุณากรอกชื่อและจำนวนวัตถุดิบ");
       return;
     }
-
+    const newDoc = {
+      id: "ing_" + Date.now(),
+      name: newIngName.trim(),
+      quantity: Number(newIngQty) || 0,
+      unit: newIngUnit,
+      min_threshold: Number(newIngThreshold) || 10,
+      is_active: true,
+      cost_per_unit: 0.2,
+      status: "in_stock",
+    };
+    setIngredients((prev) => [...prev, newDoc]);
+    try {
+      await saveMongoIngredient({ data: newDoc });
+    } catch {}
     setNewIngName("");
     setNewIngQty("");
     setNewIngThreshold("");
     setShowAddForm(false);
-
-    try {
-      await addIngredient(newIngName.trim(), q, newIngUnit, t);
-      // Re-fetch from DB so the real row (with the real UUID) is shown
-      await fetchIngredients();
-    } catch (err) {
-      console.error("เพิ่มวัตถุดิบไม่สำเร็จ:", err);
-      alert("ไม่สามารถเพิ่มวัตถุดิบได้ กรุณาลองใหม่");
-    }
   };
 
-  const saveIngredientEdit = async (id: string) => {
-    const q = parseFloat(editQty);
-    const t = parseFloat(editThreshold);
-    if (!editName.trim() || isNaN(q) || isNaN(t)) {
-      alert("กรุณากรอกข้อมูลให้ครบถ้วน");
-      return;
-    }
-
-    // Optimistic update
-    setIngredients((prev) =>
-      prev.map((i) =>
-        i.id === id
-          ? {
-              ...i,
-              name: editName.trim(),
-              quantity: q,
-              unit: editUnit,
-              min_threshold: t,
-            }
-          : i,
-      ),
-    );
+  const handleSaveEdit = async (id: string) => {
+    const target = ingredients.find((i) => i.id === id);
+    if (!target) return;
+    const updated = {
+      ...target,
+      name: editName.trim(),
+      quantity: Number(editQty) || 0,
+      unit: editUnit,
+      min_threshold: Number(editThreshold) || 10,
+    };
+    setIngredients((prev) => prev.map((i) => (i.id === id ? updated : i)));
+    try {
+      await saveMongoIngredient({
+        data: {
+          id: updated.id,
+          name: updated.name,
+          quantity: updated.quantity,
+          unit: updated.unit,
+          min_threshold: updated.min_threshold,
+          cost_per_unit: updated.cost_per_unit || 0.2,
+          is_active: updated.is_active ?? true,
+          status: updated.status || "in_stock",
+        },
+      });
+    } catch {}
     setEditingId(null);
-
-    try {
-      await updateIngredientStock(id, q, editName.trim(), editUnit, t);
-      // Re-fetch to confirm DB state
-      await fetchIngredients();
-    } catch (err) {
-      console.error("Supabase edit update failed:", err);
-      alert("บันทึกข้อมูลไม่สำเร็จ กรุณาลองใหม่");
-      // Revert by re-fetching
-      await fetchIngredients();
-    }
   };
 
-  const handleRemoveIngredient = async (id: string, name: string) => {
-    if (!confirm(`คุณต้องการลบวัตถุดิบ "${name}" ใช่หรือไม่?`)) return;
+  const handleDeleteIngredient = async (id: string, name: string) => {
+    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบ ${name}?`)) return;
     setIngredients((prev) => prev.filter((i) => i.id !== id));
     try {
-      await deleteIngredient(id);
-    } catch {
-      console.warn("Supabase delete failed.");
-    }
+      await deleteMongoIngredient({ data: { ingredientId: id } });
+    } catch {}
   };
 
-  // Rendering Helpers
+  const handleQuickAddStock = async (id: string, delta: number) => {
+    setIngredients((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i)),
+    );
+    try {
+      await updateMongoIngredientStock({ data: { ingredientId: id, deltaQuantity: delta } });
+    } catch {}
+  };
+
+  // Menu item stock toggle
+  const toggleMenuItemStock = (itemId: string) => {
+    setOutOfStockIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId],
+    );
+  };
+
   const formatUnitAndQty = (qty: number, unit: string) => {
     if (unit === "g" && qty >= 1000) {
-      return `${Number((qty / 1000).toFixed(2))} kg`;
+      return `${(qty / 1000).toFixed(1)} กก.`;
     }
-    return `${qty} ${unit}`;
+    return `${qty.toLocaleString()} ${unit}`;
   };
 
   const groupedIngredients = useMemo(() => {
     const meat = ingredients.filter(
-      (i) => i.name.includes("หมู") || i.name.includes("ไก่") || i.name === "เนื้อ",
+      (i) => i.name.includes("หมู") || i.name.includes("ไก่") || i.name.includes("เนื้อ"),
     );
     const seafood = ingredients.filter(
-      (i) => i.name.includes("หมึก") || i.name.includes("กุ้ง") || i.name.includes("หอย"),
+      (i) => i.name.includes("กุ้ง") || i.name.includes("หมึก") || i.name.includes("หอย"),
     );
     const toppings = ingredients.filter(
       (i) => i.name.includes("ไข่") || i.name.includes("ไส้กรอก") || i.name.includes("กุนเชียง"),
     );
     const others = ingredients.filter(
       (i) =>
-        !meat.some((m) => m.id === i.id) &&
-        !seafood.some((s) => s.id === i.id) &&
-        !toppings.some((t) => t.id === i.id),
+        !meat.includes(i) && !seafood.includes(i) && !toppings.includes(i),
     );
     return { meat, seafood, toppings, others };
   }, [ingredients]);
 
   if (checkingAuth) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center font-sans">
-        <div className="text-center space-y-3">
-          <div className="h-10 w-10 border-4 border-[#002e47] border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-sm font-bold text-gray-500">กำลังตรวจสอบสิทธิ์ผู้ดูแลระบบ...</p>
+      <div className="h-screen w-full bg-[#fff8f2] flex items-center justify-center" style={{ backgroundColor: "rgb(255, 248, 242)" }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 border-3 border-[#002e47] border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-600 text-sm font-semibold">กำลังตรวจสอบสิทธิ์ Admin...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#fff8f2] text-gray-900 flex flex-col md:flex-row font-sans">
-      {/* ── Mobile Sidebar Header ── */}
-      <header className="md:hidden bg-[#002e47] text-white p-4 flex items-center justify-between shadow-md sticky top-0 z-30">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 active:scale-95 transition"
-          >
-            <Menu size={20} />
-          </button>
-          <span className="font-black text-sm tracking-wide">หลังบ้านผู้ดูแลระบบ (Admin)</span>
-        </div>
-        <button onClick={handleLogout} className="text-red-300 font-bold text-xs">
-          ออก
-        </button>
-      </header>
-
-      {/* ── Mobile Navigation Drawer ── */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 z-40 md:hidden"
-            />
-            <motion.aside
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "tween", duration: 0.2 }}
-              className="fixed top-0 left-0 bottom-0 w-64 bg-[#002e47] text-white z-50 flex flex-col p-5 shadow-2xl"
-            >
-              <AdminSidebar
-                view={view}
-                setView={setView}
-                setSidebarOpen={setSidebarOpen}
-                handleLogout={handleLogout}
-                pendingCount={users.filter((u) => u.is_active === false).length}
-              />
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* ── Desktop Left Sidebar ── */}
-      <aside className="hidden md:flex flex-col w-72 h-screen shrink-0 bg-[#002e47] text-white border-r border-[#ece4d6] shadow-md z-20">
+    <div className="flex h-screen w-full bg-[#fff8f2] text-slate-800 font-sans overflow-hidden" style={{ backgroundColor: "rgb(255, 248, 242)" }}>
+      {/* Sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 lg:static lg:block ${sidebarOpen ? "block" : "hidden"}`}>
         <AdminSidebar
           view={view}
           setView={setView}
+          setSidebarOpen={setSidebarOpen}
           handleLogout={handleLogout}
-          pendingCount={users.filter((u) => u.is_active === false).length}
         />
-      </aside>
+      </div>
 
-      {/* ── Main content view area ── */}
-      <main className="flex-1 flex flex-col h-screen overflow-y-auto min-w-0 bg-[#fff8f2]">
-        {/* Desktop Header */}
-        <header className="hidden md:block bg-white border-b border-[#ece4d6] p-5 sticky top-0 z-10 shadow-sm shrink-0">
-          <div className="flex items-center justify-between">
+      {/* Main Container */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#fff8f2]" style={{ backgroundColor: "rgb(255, 248, 242)" }}>
+        {/* Top Navbar */}
+        <header className="h-16 border-b border-[#ece4d6] bg-[#002e47] text-white px-6 flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 rounded-xl bg-white/10 border border-white/15 text-white hover:bg-white/20"
+            >
+              <Menu size={20} />
+            </button>
             <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#002e47] text-white shadow-md">
-                {view === "dashboard" ? (
-                  <LayoutDashboard size={18} className="text-[#fcc14a]" />
-                ) : view === "inventory" ? (
-                  <ClipboardList size={18} className="text-[#fcc14a]" />
-                ) : (
-                  <Users size={18} className="text-[#fcc14a]" />
-                )}
+              <div className="w-9 h-9 rounded-xl bg-[#fcc14a]/20 border border-[#fcc14a]/40 grid place-items-center">
+                <ChefHat className="text-[#fcc14a]" size={20} />
               </div>
               <div>
-                <h1 className="text-lg font-black text-[#002e47] tracking-tight">
-                  {view === "dashboard"
-                    ? "รายงานยอดขาย & ประวัติ"
-                    : view === "inventory"
-                      ? "จัดการคลังสต็อก & เมนู"
-                      : view === "approvals"
-                        ? "คำขออนุมัติสิทธิ์"
-                        : "จัดการระดับพนักงาน"}
+                <h1 className="font-bold text-base leading-tight text-white flex items-center gap-2">
+                  แผงควบคุมระบบ Dineos
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#fcc14a]/20 text-[#fcc14a] font-medium border border-[#fcc14a]/30">
+                    MongoDB Master
+                  </span>
                 </h1>
-                <p className="text-xs text-slate-500 font-semibold">
+                <p className="text-[11px] text-white/60">
                   {view === "dashboard"
-                    ? "วิเคราะห์ยอดขายสะสม ยอดสั่งซื้อ และรายรับทั้งหมดของร้าน"
+                    ? "แดชบอร์ดภาพรวมและสรุปยอดขาย"
                     : view === "inventory"
-                      ? "เปิดปิดเมนูอาหาร ปรับปรุงจำนวนสต็อกวัตถุดิบหน้าร้าน"
-                      : view === "approvals"
-                        ? "อนุมัติหรือปฏิเสธคำขอสิทธิ์การใช้งานจากพนักงาน"
-                        : "จัดการและเปลี่ยนบทบาทสิทธิ์ (Admin / Staff / Customer) ในระบบ"}
+                      ? "จัดการสต็อกวัตถุดิบและสถานะเมนู"
+                      : "จัดการรายชื่อและอนุมัติสิทธิ์พนักงาน"}
                 </p>
               </div>
             </div>
-
-            <a
-              href="/customer"
-              className="flex items-center gap-1.5 text-xs font-bold text-[#002e47] bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl px-3.5 py-2 transition"
-            >
-              <ArrowLeft size={14} />
-              <span>สั่งอาหาร (หน้าร้าน)</span>
-            </a>
           </div>
         </header>
 
-        {/* Dynamic Inner Panel View */}
-        <div className="p-4 sm:p-6 flex-1 max-w-6xl w-full mx-auto">
-          {view === "dashboard" && <AdminDashboardView orders={orders} loading={loadingOrders} />}
+        {/* Dynamic View Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 no-scrollbar bg-[#fff8f2]" style={{ backgroundColor: "rgb(255, 248, 242)" }}>
+          {view === "dashboard" && (
+            <AdminDashboardView
+              orders={orders}
+              loading={loadingOrders}
+            />
+          )}
+
           {view === "inventory" && (
             <AdminInventoryView
               ingredients={ingredients}
               loading={loadingIngredients}
+              menuItems={menuItems}
+              loadingMenuItems={loadingMenuItems}
               activeSubView={activeSubView}
               setActiveSubView={setActiveSubView}
               searchQuery={searchQuery}
@@ -627,8 +390,8 @@ function AdminDashboard() {
               showAddForm={showAddForm}
               setShowAddForm={setShowAddForm}
               outOfStockIds={outOfStockIds}
-              toggleStock={toggleStock}
-              adjustIngredientQty={adjustIngredientQty}
+              toggleStock={toggleMenuItemStock}
+              adjustIngredientQty={handleQuickAddStock}
               handleAddIngredientSubmit={handleAddIngredientSubmit}
               newIngName={newIngName}
               setNewIngName={setNewIngName}
@@ -647,28 +410,27 @@ function AdminDashboard() {
               editUnit={editUnit}
               setEditUnit={setEditUnit}
               editThreshold={editThreshold}
-              menuItems={menuItems}
-              loadingMenuItems={loadingMenuItems}
               setEditThreshold={setEditThreshold}
-              saveIngredientEdit={saveIngredientEdit}
-              handleRemoveIngredient={handleRemoveIngredient}
+              saveIngredientEdit={handleSaveEdit}
+              handleRemoveIngredient={handleDeleteIngredient}
               formatUnitAndQty={formatUnitAndQty}
               groupedIngredients={groupedIngredients}
               setIngredients={setIngredients}
             />
           )}
+
           {(view === "staff" || view === "approvals") && (
             <AdminStaffView
               users={users}
               loading={loadingUsers}
-              updateUserRole={updateUserRole}
-              toggleUserActiveStatus={toggleUserActiveStatus}
-              deleteUser={deleteUser}
+              updateUserRole={handleUpdateRole}
+              toggleUserActiveStatus={handleToggleActive}
+              deleteUser={handleDeleteUser}
               isApprovalsTab={view === "approvals"}
             />
           )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }

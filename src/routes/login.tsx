@@ -1,7 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "../lib/supabase";
-import { syncAuthUserToSupabase } from "../lib/supabase.service";
 import {
   ShoppingBag,
   Mail,
@@ -18,13 +16,15 @@ import { BRAND, BRAND_MID, GOLD, INK, INK_MUTED } from "../constants/theme";
 import type { UserRole, Gender } from "../types";
 import { AuthBrandingBanner } from "../components/auth/auth-branding-banner";
 import { RoleSelectorCard } from "../components/auth/role-selector-card";
-import { GoogleButton } from "../components/auth/google-button";
+import { GoogleButton, type GoogleUserProfile } from "../components/auth/google-button";
+import { mongoLogin, mongoRegister, mongoGoogleAuth } from "../lib/api/auth.functions";
+import { getStoredUser, setStoredUser, clearStoredUser, setGuestUser, type StoredUser } from "../lib/auth";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "เข้าสู่ระบบ · ร้านลุงเก้ต" },
-      { name: "description", content: "เข้าสู่ระบบเพื่อสั่งอาหารจากร้านลุงเก้ต" },
+      { title: "เข้าสู่ระบบ · Dineos" },
+      { name: "description", content: "เข้าสู่ระบบ Dineos ระบบจัดการร้านอาหารและสั่งอาหารออนไลน์" },
     ],
   }),
   component: LoginPage,
@@ -47,62 +47,25 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
-  const [session, setSession] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
   const emailRef = useRef<HTMLInputElement>(null);
   const [hoveredRole, setHoveredRole] = useState<UserRole | null>(null);
   const [hoveredGuest, setHoveredGuest] = useState(false);
 
   // ── check if already logged in ────────────────────────────────
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      let errorDesc: string | null = null;
-
-      // Check hash (Implicit flow)
-      if (window.location.hash) {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        errorDesc = hashParams.get("error_description");
-      }
-
-      // Check search (PKCE flow)
-      if (!errorDesc && window.location.search) {
-        const searchParams = new URLSearchParams(window.location.search);
-        errorDesc = searchParams.get("error_description");
-      }
-
-      if (errorDesc) {
-        setFormError(decodeURIComponent(errorDesc).replace(/\+/g, " "));
-        window.history.replaceState(null, "", window.location.pathname);
-      }
+    const user = getStoredUser();
+    if (user && user.id !== "guest-user") {
+      setCurrentUser(user);
     }
+  }, []);
 
-    supabase.auth.getSession().then(({ data }: any) => {
-      setSession(data.session);
-    });
-
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event: any, currentSession: any) => {
-        setSession(currentSession);
-        if (event === "SIGNED_IN" && currentSession) {
-          try {
-            await syncAuthUserToSupabase(currentSession.user);
-          } catch (e) {
-            console.error("[Login] syncAuthUserToSupabase error:", e);
-          }
-          navigate({ to: "/" });
-        }
-      }
-    );
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, [navigate]);
-
-  // ── Supabase email/password ───────────────────────────────────
+  // ── Email/Password Submit ─────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError("");
     setFormSuccess("");
+
     if (!email.trim() || !password) {
       setFormError("กรุณากรอกอีเมลและรหัสผ่าน");
       return;
@@ -119,123 +82,125 @@ function LoginPage() {
       setFormError("กรุณาเลือกเพศ");
       return;
     }
+
     setLoading(true);
+
     try {
       if (tab === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          setFormError(translateAuthError(error.message));
+        const res = await mongoLogin({
+          data: { email: email.trim(), password },
+        });
+
+        if (!res.success || !res.user) {
+          setFormError(res.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
           setLoading(false);
+          return;
+        }
+
+        const loggedInUser: StoredUser = {
+          id: res.user.id,
+          email: res.user.email,
+          role: res.user.role as any,
+          fullName: res.user.fullName,
+          isActive: res.user.isActive,
+        };
+
+        setStoredUser(loggedInUser);
+        setCurrentUser(loggedInUser);
+
+        // Redirect based on role
+        if (loggedInUser.role === "admin") {
+          navigate({ to: "/admin" });
+        } else if (loggedInUser.role === "staff") {
+          navigate({ to: "/staff" });
+        } else {
+          navigate({ to: "/customer" });
         }
       } else {
-        // Register: pass nickname & role as user_metadata
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: nickname.trim(),
-              display_name: nickname.trim(),
-              phone: phone.trim(),
-              gender,
-              role,
-            },
+        // Register
+        const res = await mongoRegister({
+          data: {
+            email: email.trim(),
+            password,
+            fullName: nickname.trim(),
+            phone: phone.trim(),
+            role,
           },
         });
-        if (error) {
-          setFormError(translateAuthError(error.message));
-          setLoading(false);
-        } else if (data.user) {
-          // Sync to public.users and public.customers
-          try {
-            const client = supabase as any;
-            const now = new Date().toISOString();
-            const { data: dbUser, error: userError } = await client
-              .from("users")
-              .upsert(
-                {
-                  auth_user_id: data.user.id,
-                  display_name: nickname.trim(),
-                  email: data.user.email,
-                  role,
-                  is_active: !(role === "admin" || role === "staff"),
-                  updated_at: now,
-                  last_login_at: now,
-                },
-                { onConflict: "auth_user_id", ignoreDuplicates: false }
-              )
-              .select()
-              .single();
 
-            if (dbUser && !userError) {
-              await client.from("customers").upsert(
-                {
-                  user_id: dbUser.id,
-                  auth_user_id: data.user.id,
-                  display_name: nickname.trim(),
-                  phone: phone.trim(),
-                  email: data.user.email,
-                  notes: gender ? `เพศ: ${gender}` : null,
-                  updated_at: now,
-                },
-                { onConflict: "auth_user_id", ignoreDuplicates: false }
-              );
+        if (!res.success || !res.user) {
+          setFormError(res.message || "เกิดข้อผิดพลาดในการลงทะเบียน");
+          setLoading(false);
+          return;
+        }
+
+        if (res.user.isActive) {
+          const registeredUser: StoredUser = {
+            id: res.user.id,
+            email: res.user.email,
+            role: res.user.role as any,
+            fullName: res.user.fullName,
+            isActive: res.user.isActive,
+          };
+          setStoredUser(registeredUser);
+          setFormSuccess(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉`);
+          setTimeout(() => {
+            if (registeredUser.role === "admin") {
+              navigate({ to: "/admin" });
+            } else if (registeredUser.role === "staff") {
+              navigate({ to: "/staff" });
+            } else {
+              navigate({ to: "/customer" });
             }
-          } catch (syncErr) {
-            console.error("[Register] sync to users/customers error:", syncErr);
-          }
-
-          if (data.session) {
-            setFormSuccess(`สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉`);
-          } else {
-            setFormSuccess(
-              `สมัครสมาชิกสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉 กรุณาตรวจสอบอีเมลเพื่อยืนยันการสมัคร หรือเข้าสู่ระบบ`
-            );
-            setTab("login");
-          }
-          setLoading(false);
+          }, 800);
+        } else {
+          setFormSuccess(
+            `ลงทะเบียนสำเร็จ! ยินดีต้อนรับ ${nickname} 🎉 บัญชีพนักงานอยู่ระหว่างรอการอนุมัติสิทธิ์`,
+          );
+          setTab("login");
         }
       }
-    } catch {
+    } catch (err: any) {
+      console.error("[Auth error]", err);
+      setFormError(err?.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ");
+    } finally {
       setLoading(false);
     }
   }
 
-  // ── Google Login ──────────────────────────────────────────────
-  async function handleGoogleLogin() {
+  // ── Google Authentication via MongoDB ─────────────────────────
+  async function handleGoogleSuccess(profile: GoogleUserProfile) {
     setFormError("");
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+      const res = await mongoGoogleAuth({
+        data: {
+          email: profile.email,
+          fullName: profile.fullName,
+          avatarUrl: profile.avatarUrl,
+          googleId: profile.googleId,
+          idToken: profile.idToken,
+        },
       });
 
-      if (error) {
-        console.error("Google Login Error: " + error.message);
-        setFormError(translateAuthError(error.message));
-        setLoading(false);
-      } else if (data?.url) {
-        console.log("Redirecting to: ", data.url);
+      if (res.success && res.user) {
+        setStoredUser(res.user);
+        if (res.user.role === "admin") {
+          navigate({ to: "/admin" });
+        } else if (res.user.role === "staff") {
+          navigate({ to: "/staff" });
+        } else {
+          navigate({ to: "/customer" });
+        }
+      } else {
+        setFormError(res.message || "ไม่สามารถเข้าสู่ระบบด้วย Google ได้");
       }
     } catch (err: any) {
-      console.error("Google Login Exception: " + (err?.message || "Unknown error"));
-      setFormError("เกิดข้อผิดพลาดในการเชื่อมต่อกับ Google");
+      console.error("[Google Auth Error]:", err);
+      setFormError(err?.message || "เกิดข้อผิดพลาดในการเข้าสู่ระบบด้วย Google");
+    } finally {
       setLoading(false);
     }
-  }
-
-  function translateAuthError(msg: string): string {
-    if (msg.includes("Invalid login credentials"))
-      return "อีเมลหรือรหัสผ่านไม่ถูกต้อง (หรือยังไม่ยืนยันอีเมล)";
-    if (msg.includes("Email not confirmed"))
-      return "กรุณายืนยันอีเมลก่อน — ตรวจสอบกล่องจดหมาย แล้วกดลิงก์ยืนยัน";
-    if (msg.includes("User already registered"))
-      return "อีเมลนี้มีบัญชีอยู่แล้ว — กรุณาเข้าสู่ระบบแทน";
-    if (msg.includes("Password should be")) return "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร";
-    if (msg.includes("rate limit")) return "ลองบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่";
-    if (msg.includes("over_email_send_rate_limit"))
-      return "ระบบส่งอีเมลบ่อยเกินไป กรุณารอ 1 นาทีแล้วลองใหม่";
-    return msg;
   }
 
   // ── UI ───────────────────────────────────────────────────────
@@ -271,7 +236,7 @@ function LoginPage() {
                 width: 110,
                 height: 110,
                 borderRadius: 28,
-                background: "rgba(255,255,255,0.08)",
+                background: "rgba(252,193,74,0.15)",
                 border: "1.5px solid rgba(252,193,74,0.35)",
                 backdropFilter: "blur(12px)",
                 boxShadow: "0 10px 32px rgba(0,0,0,0.35)",
@@ -284,10 +249,10 @@ function LoginPage() {
               className="text-[26px] font-extrabold text-white tracking-tight"
               style={{ fontFamily: "'Prompt', sans-serif" }}
             >
-              ร้านลุงเก้ต
+              Dineos
             </h1>
             <p className="mt-1 text-[13px] font-light text-white/60">
-              สั่งอาหารง่าย ๆ ผ่านระบบออนไลน์
+              Smart Restaurant & Dining Solution
             </p>
           </div>
 
@@ -300,7 +265,7 @@ function LoginPage() {
 
           {/* ── Form area ──────────────────────────────────── */}
           <div className="flex flex-col flex-1 w-full max-w-[480px] mx-auto px-6 sm:px-10 pt-2 pb-8 gap-5">
-            {session ? (
+            {currentUser ? (
               <div className="flex flex-col gap-5 py-4">
                 <div
                   className="rounded-2xl p-5 border text-center flex flex-col gap-3.5 shadow-sm"
@@ -314,36 +279,37 @@ function LoginPage() {
                     >
                       คุณเข้าสู่ระบบค้างไว้แล้ว
                     </h3>
-                    <p className="text-xs text-slate-500 mt-1">อีเมลผู้ใช้งานปัจจุบัน:</p>
+                    <p className="text-xs text-slate-500 mt-1">ผู้ใช้งานปัจจุบัน:</p>
                     <p className="text-sm font-bold text-[#002e47] mt-0.5 break-all">
-                      {session.user.email}
+                      {currentUser.fullName || currentUser.email} ({currentUser.role})
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-2.5">
                   <button
-                    onClick={() => navigate({ to: "/" })}
+                    onClick={() => {
+                      if (currentUser.role === "admin") navigate({ to: "/admin" });
+                      else if (currentUser.role === "staff") navigate({ to: "/staff" });
+                      else navigate({ to: "/customer" });
+                    }}
                     className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-white text-[15px] transition-all duration-200 hover:shadow-[0_8px_25px_rgba(0,46,71,0.35)] hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
                     style={{
                       background: `linear-gradient(135deg, ${BRAND} 0%, ${BRAND_MID} 100%)`,
                       boxShadow: "0 6px 20px rgba(0,46,71,0.25)",
                     }}
                   >
-                    ไปยังหน้าแรก (ตามสิทธิ์การใช้งาน)
+                    ไปยังหน้าการใช้งาน ({currentUser.role})
                   </button>
 
                   <button
-                    onClick={async () => {
-                      setLoading(true);
-                      await supabase.auth.signOut();
-                      setSession(null);
-                      setLoading(false);
+                    onClick={() => {
+                      clearStoredUser();
+                      setCurrentUser(null);
                     }}
-                    disabled={loading}
                     className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 font-bold text-[#b91c1c] text-[15px] transition-all duration-200 active:scale-[0.97] bg-red-50 hover:bg-red-100 border border-red-200 cursor-pointer"
                   >
-                    {loading ? "กำลังออกจากระบบ..." : "ออกจากระบบเพื่อเปลี่ยนบัญชี"}
+                    ออกจากระบบเพื่อเปลี่ยนบัญชี
                   </button>
                 </div>
               </div>
@@ -662,7 +628,7 @@ function LoginPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.setItem("ran-lung-get-guest", "true");
+                    setGuestUser();
                     navigate({ to: "/customer" });
                   }}
                   onMouseEnter={() => setHoveredGuest(true)}
@@ -696,18 +662,16 @@ function LoginPage() {
 
                 {/* Social Login Buttons — login tab only */}
                 {tab === "login" && (
-                  <GoogleButton onClick={handleGoogleLogin} loading={loading} />
+                  <GoogleButton onGoogleSuccess={handleGoogleSuccess} loading={loading} />
                 )}
 
                 {/* Privacy note */}
-                <p
-                  className="text-center text-[11px] leading-relaxed px-4 text-slate-400"
-                >
+                <p className="text-center text-[11px] leading-relaxed px-4 text-slate-400">
                   {tab === "register"
                     ? "การสมัครสมาชิกแสดงว่าคุณยอมรับเงื่อนไขการใช้งาน"
                     : "การเข้าสู่ระบบแสดงว่าคุณยอมรับเงื่อนไขการใช้งาน"}
                   <br />
-                  ข้อมูลของคุณจะถูกเก็บเป็นความลับ
+                  ข้อมูลของคุณจะถูกเก็บเป็นความลับบน MongoDB
                 </p>
               </>
             )}
@@ -716,7 +680,7 @@ function LoginPage() {
           {/* Footer */}
           <div className="py-4 text-center border-t border-slate-100">
             <p className="text-[10px] text-slate-400">
-              © 2026 ร้านลุงเก้ต · Powered by Supabase
+              © 2026 Dineos · Powered by MongoDB
             </p>
           </div>
         </div>

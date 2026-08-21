@@ -87,7 +87,7 @@ export function ContactOverlay({ onBack }: ContactOverlayProps) {
             {/* Shop info overlay on Map */}
             <div className="absolute bottom-4 left-5 right-5 flex items-end justify-between pointer-events-none">
               <div className="text-white">
-                <h2 className="text-xl font-bold">{t("ร้านลุงเกตุ")}</h2>
+                <h2 className="text-xl font-bold">{t("Dineos")}</h2>
                 <p className="text-xs text-white/80 mt-1">
                   {t("อาหารตามสั่ง · Street Food")}
                 </p>

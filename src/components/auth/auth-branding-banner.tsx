@@ -52,10 +52,10 @@ export function AuthBrandingBanner() {
               className="font-bold text-lg tracking-wider"
               style={{ fontFamily: "'Prompt', sans-serif" }}
             >
-              ร้านลุงเก้ต · LUNG GET
+              Dineos · Smart Dining
             </span>
             <span className="text-[11px] text-white/50 tracking-widest uppercase">
-              Authentic Thai Kitchen
+              Restaurant Management & Ordering
             </span>
           </div>
         </div>
@@ -66,7 +66,7 @@ export function AuthBrandingBanner() {
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold bg-[#fcc14a]/20 text-[#fcc14a] border border-[#fcc14a]/40 uppercase tracking-widest backdrop-blur-md shadow-inner">
             <span className="w-2 h-2 rounded-full bg-[#fcc14a] animate-ping" />
-            Epicurean Experience
+            Dineos Platform
           </span>
         </div>
 
@@ -82,7 +82,7 @@ export function AuthBrandingBanner() {
         </h2>
 
         <p className="text-white/75 text-sm lg:text-base leading-relaxed font-light">
-          สัมผัสประสบการณ์การสั่งอาหารที่สะดวกและรวดเร็วที่สุด
+          สัมผัสประสบการณ์การสั่งอาหารที่สะดวกและรวดเร็วที่สุดด้วย Dineos
           ไม่ว่าจะรับประทานที่ร้าน สั่งกลับบ้าน หรือจัดส่งถึงบ้าน
           เราพร้อมเสิร์ฟรสชาติแห่งความสุขให้คุณถึงที่
         </p>
@@ -102,7 +102,7 @@ export function AuthBrandingBanner() {
 
       {/* Bottom Status Footer */}
       <div className="relative z-10 flex justify-between items-center text-xs text-white/50 border-t border-white/10 pt-6">
-        <span>© 2026 ร้านลุงเก้ต. All rights reserved.</span>
+        <span>© 2026 Dineos. All rights reserved.</span>
         <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
           <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
           ครัวเปิดให้บริการปกติ (08:00 - 21:00)

@@ -1,8 +1,10 @@
 import { useMemo } from "react";
-import { supabase } from "../../lib/supabase";
-import { getIngredients } from "../../lib/supabase.service";
 import { MENU } from "../../constants/menu.data";
 import { type MenuItem } from "../../types";
+import {
+  saveMongoIngredient,
+  getMongoIngredients,
+} from "../../lib/api/mongo.functions";
 import {
   ChefHat,
   PlusCircle,
@@ -100,28 +102,28 @@ export function AdminInventoryView({
   const handleSeedDefaultData = async () => {
     if (!confirm("คุณต้องการนำเข้าวัตถุดิบตั้งต้นสำหรับสาขาหรือไม่?")) return;
     const defaults = [
-      { name: "หมูสับ", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "หมูกรอบ", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "หมูชิ้น", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "ไก่สับ", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "ไก่ต้ม", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "เนื้อ", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "หมึก", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "กุ้ง", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "หอยลาย", quantity: 1000, unit: "g", min_threshold: 200 },
-      { name: "ไข่ไก่", quantity: 100, unit: "pcs", min_threshold: 15 },
-      { name: "ไส้กรอก", quantity: 50, unit: "pcs", min_threshold: 10 },
-      { name: "กุนเชียง", quantity: 50, unit: "pcs", min_threshold: 10 },
+      { id: "mock-1", name: "หมูสับ", quantity: 5000, unit: "g", min_threshold: 500, cost_per_unit: 0.18, is_active: true, status: "in_stock" },
+      { id: "mock-2", name: "หมูกรอบ", quantity: 3000, unit: "g", min_threshold: 400, cost_per_unit: 0.35, is_active: true, status: "in_stock" },
+      { id: "mock-3", name: "หมูชิ้น", quantity: 4000, unit: "g", min_threshold: 500, cost_per_unit: 0.20, is_active: true, status: "in_stock" },
+      { id: "mock-4", name: "ไก่สับ", quantity: 3500, unit: "g", min_threshold: 400, cost_per_unit: 0.15, is_active: true, status: "in_stock" },
+      { id: "mock-5", name: "ไก่ต้ม", quantity: 2500, unit: "g", min_threshold: 300, cost_per_unit: 0.16, is_active: true, status: "in_stock" },
+      { id: "mock-6", name: "เนื้อวัว", quantity: 2000, unit: "g", min_threshold: 300, cost_per_unit: 0.45, is_active: true, status: "in_stock" },
+      { id: "mock-7", name: "ปลาหมึก", quantity: 2500, unit: "g", min_threshold: 300, cost_per_unit: 0.38, is_active: true, status: "in_stock" },
+      { id: "mock-8", name: "กุ้งสด", quantity: 3000, unit: "g", min_threshold: 400, cost_per_unit: 0.40, is_active: true, status: "in_stock" },
+      { id: "mock-9", name: "หอยลาย", quantity: 2000, unit: "g", min_threshold: 300, cost_per_unit: 0.25, is_active: true, status: "in_stock" },
+      { id: "mock-10", name: "ไข่ไก่", quantity: 150, unit: "pcs", min_threshold: 20, cost_per_unit: 4.5, is_active: true, status: "in_stock" },
+      { id: "mock-11", name: "ไส้กรอก", quantity: 80, unit: "pcs", min_threshold: 15, cost_per_unit: 8.0, is_active: true, status: "in_stock" },
+      { id: "mock-12", name: "กุนเชียง", quantity: 70, unit: "pcs", min_threshold: 15, cost_per_unit: 10.0, is_active: true, status: "in_stock" },
     ];
 
     try {
-      const { error } = await supabase.from("ingredients").insert(defaults);
-      if (!error) {
-        const fresh = await getIngredients();
-        if (fresh) setIngredients(fresh);
+      for (const d of defaults) {
+        await saveMongoIngredient({ data: d });
       }
+      const fresh = await getMongoIngredients();
+      if (fresh.success && fresh.data) setIngredients(fresh.data);
     } catch {
-      setIngredients(defaults.map((d, idx) => ({ ...d, id: `mock-${idx}` })));
+      setIngredients(defaults);
       localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(defaults));
     }
   };
@@ -131,9 +133,23 @@ export function AdminInventoryView({
     setIngredients((prev: any[]) =>
       prev.map((i) => (i.id === id ? { ...i, is_active: nextVal } : i)),
     );
-    try {
-      await supabase.from("ingredients").update({ is_active: nextVal }).eq("id", id);
-    } catch {}
+    const target = ingredients.find((i) => i.id === id);
+    if (target) {
+      try {
+        await saveMongoIngredient({
+          data: {
+            id: target.id,
+            name: target.name,
+            quantity: Number(target.quantity),
+            unit: target.unit || "g",
+            min_threshold: Number(target.min_threshold) || 10,
+            cost_per_unit: target.cost_per_unit || 0.2,
+            is_active: nextVal,
+            status: target.status || "in_stock",
+          },
+        });
+      } catch {}
+    }
   };
 
   const categories = [
