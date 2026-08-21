@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { supabase } from "../../lib/supabase";
 import { type OrderHistory } from "../../types";
 import {
   Plus,
@@ -8,6 +7,13 @@ import {
   X,
   ChevronRight,
 } from "lucide-react";
+import {
+  getMongoTables,
+  updateMongoTableStatus,
+  createMongoTable,
+  deleteMongoTable,
+  updateMongoOrderStatus,
+} from "../../lib/api/mongo.functions";
 
 interface TableManagementViewProps {
   orders: OrderHistory[];
@@ -42,12 +48,9 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
   const fetchTables = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("restaurant_tables")
-        .select("id, label, status, capacity, table_type")
-        .order("id");
-      if (!error && data && data.length > 0) {
-        const strData = data.map((t: any) => ({ ...t, id: String(t.id) }));
+      const res = await getMongoTables();
+      if (res.success && res.data && res.data.length > 0) {
+        const strData = res.data.map((t: any) => ({ ...t, id: String(t.id) }));
         setTables(strData as any);
         localStorage.setItem("ran-lung-get-tables", JSON.stringify(strData));
       } else {
@@ -64,31 +67,6 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
 
   useEffect(() => {
     fetchTables();
-    const ch = supabase
-      .channel("tables-staff-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "restaurant_tables" }, (payload: any) => {
-        if (payload.eventType === "DELETE") {
-          const deletedId = String(payload.old?.id);
-          setTables(prev => {
-            const next = prev.filter(t => t.id !== deletedId);
-            localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
-            return next;
-          });
-          setSelectedTable((prev: any) => prev?.id === deletedId ? null : prev);
-        } else if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
-          const updated = { ...payload.new, id: String(payload.new.id) } as any;
-          setTables((prev) => {
-            const exists = prev.some(t => t.id === updated.id);
-            const next = exists
-              ? prev.map(t => t.id === updated.id ? { ...t, ...updated } : t)
-              : [...prev, updated];
-            localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
-            return next;
-          });
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
   }, []);
 
   const getActiveOrdersForTable = (tableLabel: string) => {
@@ -98,15 +76,19 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
     );
   };
 
-  const updateTableStatus = async (tableId: string, nextStatus: string) => {
-    const nextList = tables.map(t => t.id === tableId ? { ...t, status: nextStatus } : t);
+  const updateTableStatus = async (tableId: string, nextStatus: any) => {
+    const nextList = tables.map((t) => (t.id === tableId ? { ...t, status: nextStatus } : t));
     setTables(nextList);
     localStorage.setItem("ran-lung-get-tables", JSON.stringify(nextList));
-    const currentSelected = nextList.find(t => t.id === tableId);
+    const currentSelected = nextList.find((t) => t.id === tableId);
     if (currentSelected) setSelectedTable(currentSelected);
     try {
-      await supabase.from("restaurant_tables").update({ status: nextStatus }).eq("id", tableId);
-    } catch { console.warn("Offline update completed locally."); }
+      await updateMongoTableStatus({
+        data: { tableId, status: nextStatus },
+      });
+    } catch {
+      console.warn("Offline update completed locally.");
+    }
   };
 
   const addNewTable = async () => {
@@ -115,15 +97,19 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
     const label = newTableName.trim();
     const suffix = newTableType === "walkin" ? " (Walk-in)" : "";
     const fullLabel = label.includes("โต๊ะ") ? label + suffix : `โต๊ะ ${label}${suffix}`;
+    const newId = String(Date.now());
     try {
-      const { data, error } = await supabase
-        .from("restaurant_tables")
-        .insert({ label: fullLabel, status: "available", capacity: newTableCapacity, table_type: newTableType })
-        .select()
-        .single();
-      if (error) throw error;
-      const newT = { ...data, id: String(data.id) };
-      setTables(prev => {
+      await createMongoTable({
+        data: {
+          id: newId,
+          label: fullLabel,
+          status: "available",
+          capacity: newTableCapacity,
+          table_type: newTableType,
+        },
+      });
+      const newT = { id: newId, label: fullLabel, status: "available", capacity: newTableCapacity, table_type: newTableType };
+      setTables((prev) => {
         const next = [...prev, newT];
         localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
         return next;
@@ -146,10 +132,11 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
       return;
     }
     try {
-      const { error } = await supabase.from("restaurant_tables").delete().eq("id", tableId);
-      if (error) throw error;
-      setTables(prev => {
-        const next = prev.filter(t => t.id !== tableId);
+      await deleteMongoTable({
+        data: { tableId },
+      });
+      setTables((prev) => {
+        const next = prev.filter((t) => t.id !== tableId);
         localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
         return next;
       });
@@ -161,21 +148,25 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
 
   const moveAllOrders = async (fromTableLabel: string, toTableLabel: string) => {
     const activeFromOrders = getActiveOrdersForTable(fromTableLabel);
-    if (activeFromOrders.length === 0) { alert("ไม่มีออเดอร์ให้ย้ายบนโต๊ะนี้"); return; }
+    if (activeFromOrders.length === 0) {
+      alert("ไม่มีออเดอร์ให้ย้ายบนโต๊ะนี้");
+      return;
+    }
     try {
-      const orderIds = activeFromOrders.map(o => o.id);
-      const { error: orderErr } = await (supabase as any).from("orders").update({ table_number: toTableLabel }).in("id", orderIds);
-      if (orderErr) throw orderErr;
-      const fromTable = tables.find(t => t.label === fromTableLabel);
-      const toTable = tables.find(t => t.label === toTableLabel);
-      if (fromTable) await (supabase as any).from("restaurant_tables").update({ status: "available" }).eq("id", fromTable.id);
-      if (toTable) await (supabase as any).from("restaurant_tables").update({ status: "occupied" }).eq("id", toTable.id);
+      const fromTable = tables.find((t) => t.label === fromTableLabel);
+      const toTable = tables.find((t) => t.label === toTableLabel);
+      if (fromTable) {
+        await updateMongoTableStatus({ data: { tableId: fromTable.id, status: "available" } });
+      }
+      if (toTable) {
+        await updateMongoTableStatus({ data: { tableId: toTable.id, status: "occupied" } });
+      }
       await fetchTables();
       await onRefreshOrders();
-      const updatedTablesList = tables.map(t =>
-        t.label === fromTableLabel ? { ...t, status: "available" } : t.label === toTableLabel ? { ...t, status: "occupied" } : t
+      const updatedTablesList = tables.map((t) =>
+        t.label === fromTableLabel ? { ...t, status: "available" } : t.label === toTableLabel ? { ...t, status: "occupied" } : t,
       );
-      setSelectedTable(updatedTablesList.find(t => t.label === toTableLabel) || null);
+      setSelectedTable(updatedTablesList.find((t) => t.label === toTableLabel) || null);
       alert(`ย้ายออเดอร์จาก ${fromTableLabel} ไปยัง ${toTableLabel} สำเร็จ!`);
     } catch (err) {
       console.error("[Move Table] Error:", err);
@@ -187,12 +178,15 @@ export function TableManagementView({ orders, onRefreshOrders }: TableManagement
     try {
       const activeOrders = getActiveOrdersForTable(tableLabel);
       if (activeOrders.length > 0) {
-        const orderIds = activeOrders.map(o => o.id);
-        await (supabase as any).from("orders").update({ status: "completed" }).in("id", orderIds);
+        for (const o of activeOrders) {
+          await updateMongoOrderStatus({
+            data: { orderNumber: o.orderNumber, status: "completed" },
+          });
+        }
       }
-      const targetTable = tables.find(t => t.label === tableLabel);
+      const targetTable = tables.find((t) => t.label === tableLabel);
       if (targetTable) {
-        await (supabase as any).from("restaurant_tables").update({ status: "available" }).eq("id", targetTable.id);
+        await updateMongoTableStatus({ data: { tableId: targetTable.id, status: "available" } });
       }
       await fetchTables();
       await onRefreshOrders();

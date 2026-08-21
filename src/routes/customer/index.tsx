@@ -1,9 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState, useEffect } from "react";
 import { type LiffProfile, liffLogout } from "../../lib/liff";
-import { supabase } from "../../lib/supabase";
-import { syncAuthUserToSupabase, getOrCreateGuestUserAndCustomer } from "../../lib/supabase.service";
 import { verifyStripeSession } from "../../lib/api/stripe.functions";
+import {
+  getMongoTables,
+  updateMongoTableStatus,
+  getMongoMenuItems,
+  getMongoIngredients,
+  createMongoOrder,
+} from "../../lib/api/mongo.functions";
+import { getStoredUser, clearStoredUser, isGuest, type StoredUser } from "../../lib/auth";
 import { AnimatePresence, motion } from "motion/react";
 import { useLanguage } from "../../lib/i18n";
 import { ShoppingBag, ChevronRight } from "lucide-react";
@@ -42,7 +48,7 @@ export const Route = createFileRoute("/customer/")({
   head: () => ({
     meta: [
       { title: "LINE LIFF · Epicurean Delivery" },
-      { name: "description", content: "สั่งอาหารพรีเมียมผ่าน LINE LIFF" },
+      { name: "description", content: "สั่งอาหารพรีเมียมผ่าน LINE LIFF (MongoDB)" },
       { property: "og:title", content: "Epicurean Delivery" },
       { property: "og:description", content: "Premium food delivery on LINE" },
     ],
@@ -57,6 +63,7 @@ function LiffApp() {
   const navigate = useNavigate();
   const [liffReady, setLiffReady] = useState(false);
   const [profile, setProfile] = useState<LiffProfile | null>(null);
+  const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
   const { t } = useLanguage();
 
   // ── WebAvatar Widget Integration (Open/Close Toggle & Animation Manager) ──
@@ -302,77 +309,28 @@ function LiffApp() {
     };
   }, [navigate]);
 
-  // ── Auth Guard (Supabase Session OR LINE LIFF) ──────────────
+  // ── Auth Guard (MongoDB Session OR Guest OR LINE LIFF) ──────────────
   useEffect(() => {
-    let cancelled = false;
-    let authListener: any = null;
-
-    async function bootstrap(sessionToCheck?: any) {
-      try {
-        // 0. ตรวจสอบ Guest mode
-        if (localStorage.getItem("ran-lung-get-guest") === "true") {
-          if (!cancelled) {
-            setProfile({ userId: "guest", displayName: "ลูกค้าหน้าร้าน" } as LiffProfile);
-            setLiffReady(true);
-          }
-          return;
-        }
-
-        // 1. ตรวจสอบ Supabase session (email/password login)
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const finalSession = sessionToCheck || session;
-
-        if (finalSession) {
-          if (!cancelled) {
-            // Profile จาก Supabase user
-            const sbProfile: LiffProfile = {
-              userId: finalSession.user.id,
-              displayName: finalSession.user.email ?? "ผู้ใช้งาน",
-              pictureUrl: undefined,
-            };
-            setProfile(sbProfile);
-            setLiffReady(true);
-
-            // Sync/fetch DB user and customer
-            try {
-              const res = await syncAuthUserToSupabase(finalSession.user);
-              if (res) {
-                setDbUser(res.user);
-                setDbCustomer(res.customer);
-              }
-            } catch (e) {
-              console.error("Failed to sync auth user:", e);
-            }
-          }
-          return;
-        }
-
-        // 2. ไม่มี session ใดเลย → redirect ไป login
-        if (!cancelled) navigate({ to: "/login" });
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[Auth Guard error]", err);
-          navigate({ to: "/login" });
-        }
-      }
+    // 0. ตรวจสอบ Guest mode หรือ Auth user
+    const user = getStoredUser();
+    if (user) {
+      setCurrentUser(user);
+      setProfile({
+        userId: user.id,
+        displayName: user.fullName || user.email,
+      } as LiffProfile);
+      setLiffReady(true);
+      return;
     }
 
-    // Subscribe to auth changes immediately to catch race conditions
-    const { data } = supabase.auth.onAuthStateChange((event: any, session: any) => {
-      if (event === "SIGNED_IN" && session) {
-        bootstrap(session);
-      }
-    });
-    authListener = data.subscription;
+    if (isGuest()) {
+      setProfile({ userId: "guest", displayName: "ลูกค้าหน้าร้าน" } as LiffProfile);
+      setLiffReady(true);
+      return;
+    }
 
-    bootstrap();
-
-    return () => {
-      cancelled = true;
-      if (authListener) authListener.unsubscribe();
-    };
+    // ไม่มี session -> redirect ไป login
+    navigate({ to: "/login" });
   }, [navigate]);
 
   // Load orders from localStorage and listen for changes (cross-tab sync)
@@ -401,8 +359,6 @@ function LiffApp() {
   }, []);
 
   const [tab, setTab] = useState<"home" | "status">("home");
-  const [dbUser, setDbUser] = useState<any>(null);
-  const [dbCustomer, setDbCustomer] = useState<any>(null);
   const [overlay, setOverlay] = useState<
     null | "menu" | "orderConfirm" | "payment" | "history" | "contact"
   >(null);
@@ -452,13 +408,12 @@ function LiffApp() {
               }, 2000);
             } else {
               setStripeError(
-                "ไม่พบข้อมูลคำสั่งซื้อที่รอดำเนินการ กรุณาตรวจสอบประวัติการสั่งซื้อของคุณ (Pending order details not found)",
+                "ไม่พบข้อมูลคำสั่งซื้อที่รอดำเนินการ กรุณาตรวจสอบประวัติการสั่งซื้อของคุณ",
               );
             }
           } else {
             setStripeError(
-              result.message ||
-                "การชำระเงินไม่ผ่านการตรวจสอบความถูกต้อง (Stripe verification failed)",
+              result.message || "การชำระเงินไม่ผ่านการตรวจสอบความถูกต้อง",
             );
           }
         } catch (err: any) {
@@ -468,7 +423,6 @@ function LiffApp() {
           );
         } finally {
           setStripeVerifying(false);
-          // Clean parameters from URL
           const newUrl = window.location.pathname;
           window.history.replaceState({}, document.title, newUrl);
         }
@@ -512,37 +466,20 @@ function LiffApp() {
     { id: "10", label: "โต๊ะ 10 (Walk-in)", status: "available" },
   ]);
 
-  // Fetch tables from Supabase (fall back to local if table doesn't exist yet)
+  // Fetch tables from MongoDB (fall back to local if offline)
   useEffect(() => {
     async function fetchTables() {
       try {
-        const { data, error } = await supabase
-          .from("restaurant_tables")
-          .select("id, label, status, capacity, table_type")
-          .order("id");
-        if (!error && data && data.length > 0) {
-          const strData = data.map((t: any) => ({
+        const res = await getMongoTables();
+        if (res.success && res.data && res.data.length > 0) {
+          const strData = res.data.map((t: any) => ({
             ...t,
             id: String(t.id),
             label: String(t.label || `โต๊ะ ${t.id}`),
             status: String(t.status || "available"),
           }));
-          const has9 = strData.some(
-            (t: any) => t.id === "9" || t.label.includes("โต๊ะ 9"),
-          );
-          const has10 = strData.some(
-            (t: any) => t.id === "10" || t.label.includes("โต๊ะ 10"),
-          );
-          const merged = [...strData];
-          if (!has9) {
-            merged.push({ id: "9", label: "โต๊ะ 9 (Walk-in)", status: "available" });
-          }
-          if (!has10) {
-            merged.push({ id: "10", label: "โต๊ะ 10 (Walk-in)", status: "available" });
-          }
-
-          setTables(merged as any);
-          localStorage.setItem("ran-lung-get-tables", JSON.stringify(merged));
+          setTables(strData as any);
+          localStorage.setItem("ran-lung-get-tables", JSON.stringify(strData));
         } else {
           const local = localStorage.getItem("ran-lung-get-tables");
           if (local) {
@@ -565,34 +502,6 @@ function LiffApp() {
       }
     }
     fetchTables();
-
-    // Real-time: อัปเดตสถานะโต๊ะทันที
-    const ch = supabase
-      .channel("tables-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "restaurant_tables" },
-        (payload: any) => {
-          if (payload.eventType === "UPDATE" || payload.eventType === "INSERT") {
-            const updated = payload.new as any;
-            const updatedIdStr = String(updated.id);
-            setTables((prev) => {
-              const next = prev.map((t) =>
-                String(t.id) === updatedIdStr
-                  ? { ...t, ...updated, id: updatedIdStr }
-                  : t,
-              );
-              localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
-              return next;
-            });
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(ch);
-    };
   }, []);
 
   const [address, setAddress] = useState("");
@@ -607,149 +516,41 @@ function LiffApp() {
 
   // States for stock management (proteins & toppings)
   const [ingredients, setIngredients] = useState<any[]>([]);
-  const [recipes, setRecipes] = useState<any[]>([]);
+  const [recipes] = useState<any[]>([
+    { option_id: "opt-mu-sap", ingredient_id: "mock-1", quantity_required: 80 },
+    { option_id: "opt-mu-krob", ingredient_id: "mock-2", quantity_required: 80 },
+    { option_id: "opt-mu-chin", ingredient_id: "mock-3", quantity_required: 80 },
+    { option_id: "opt-kai-sap", ingredient_id: "mock-4", quantity_required: 80 },
+    { option_id: "opt-kai-tom", ingredient_id: "mock-5", quantity_required: 80 },
+    { option_id: "opt-nua", ingredient_id: "mock-6", quantity_required: 80 },
+    { option_id: "opt-muek", ingredient_id: "mock-7", quantity_required: 80 },
+    { option_id: "opt-kung", ingredient_id: "mock-8", quantity_required: 80 },
+    { option_id: "opt-hoi-lay", ingredient_id: "mock-9", quantity_required: 80 },
+    { option_id: "opt-khai-kai", ingredient_id: "mock-10", quantity_required: 1 },
+    { option_id: "opt-sai-krog", ingredient_id: "mock-11", quantity_required: 1 },
+    { option_id: "opt-kun-chiang", ingredient_id: "mock-12", quantity_required: 1 },
+  ]);
 
-  // Fetch ingredients and recipes from Supabase with real-time sync
+  // Fetch ingredients and menu from MongoDB
   useEffect(() => {
-    async function loadMenu() {
+    async function loadData() {
       try {
-        const { data: dbItems, error } = await supabase
-          .from("menu_items")
-          .select("*")
-          .order("sort_order");
-        if (!error && dbItems && dbItems.length > 0) {
-          const mapped = dbItems.map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            desc: item.description || "",
-            price: Number(item.price),
-            image: item.image_url || item.image || "",
-            category: item.category,
-            isAvailable: item.is_available ?? true,
-            isSpicy: item.is_spicy ?? false,
-            options: item.options || undefined,
-            addons: item.addons || undefined,
-          }));
-          setMenuItems(mapped);
-          localStorage.setItem("ran-lung-get-menu-items", JSON.stringify(mapped));
-        } else {
-          const localMenu = localStorage.getItem("ran-lung-get-menu-items");
-          if (localMenu) {
-            setMenuItems(JSON.parse(localMenu));
-          }
+        const menuRes = await getMongoMenuItems();
+        if (menuRes.success && menuRes.data && menuRes.data.length > 0) {
+          setMenuItems(menuRes.data as any);
+          localStorage.setItem("ran-lung-get-menu-items", JSON.stringify(menuRes.data));
+        }
+
+        const ingRes = await getMongoIngredients();
+        if (ingRes.success && ingRes.data && ingRes.data.length > 0) {
+          setIngredients(ingRes.data);
+          localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(ingRes.data));
         }
       } catch (err) {
-        console.warn("Failed to load menu from Supabase:", err);
-        const localMenu = localStorage.getItem("ran-lung-get-menu-items");
-        if (localMenu) {
-          setMenuItems(JSON.parse(localMenu));
-        }
+        console.warn("Error loading from MongoDB:", err);
       }
     }
-
-    async function loadStock() {
-      try {
-        const { data: ingData } = await supabase.from("ingredients").select("*");
-        if (ingData && ingData.length > 0) {
-          setIngredients(ingData);
-        } else {
-          const localIng = localStorage.getItem("ran-lung-get-mock-ingredients");
-          if (localIng) {
-            setIngredients(JSON.parse(localIng));
-          }
-        }
-
-        const { data: recData } = await supabase.from("recipe_items").select("*");
-        if (recData && recData.length > 0) {
-          setRecipes(recData);
-        } else {
-          const fallbackRecipes = [
-            { option_id: "opt-mu-sap", ingredient_id: "mock-1", quantity_required: 80 },
-            { option_id: "opt-mu-krob", ingredient_id: "mock-2", quantity_required: 80 },
-            { option_id: "opt-mu-chin", ingredient_id: "mock-3", quantity_required: 80 },
-            { option_id: "opt-kai-sap", ingredient_id: "mock-4", quantity_required: 80 },
-            { option_id: "opt-kai-tom", ingredient_id: "mock-5", quantity_required: 80 },
-            { option_id: "opt-nua", ingredient_id: "mock-6", quantity_required: 80 },
-            { option_id: "opt-muek", ingredient_id: "mock-7", quantity_required: 80 },
-            { option_id: "opt-kung", ingredient_id: "mock-8", quantity_required: 80 },
-            { option_id: "opt-hoi-lay", ingredient_id: "mock-9", quantity_required: 80 },
-            { option_id: "opt-khai-kai", ingredient_id: "mock-10", quantity_required: 1 },
-            { option_id: "opt-sai-krog", ingredient_id: "mock-11", quantity_required: 1 },
-            { option_id: "opt-kun-chiang", ingredient_id: "mock-12", quantity_required: 1 },
-          ];
-          setRecipes(fallbackRecipes);
-        }
-      } catch (err) {
-        console.warn("Error loading stock from database, using local fallback:", err);
-        const localIng = localStorage.getItem("ran-lung-get-mock-ingredients");
-        if (localIng) {
-          setIngredients(JSON.parse(localIng));
-        }
-      }
-    }
-    loadMenu();
-    loadStock();
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "ran-lung-get-mock-ingredients" && e.newValue) {
-        try {
-          setIngredients(JSON.parse(e.newValue));
-        } catch (err) {
-          console.error("Storage sync parse error:", err);
-        }
-      }
-      if (e.key === "ran-lung-get-menu-items" && e.newValue) {
-        try {
-          setMenuItems(JSON.parse(e.newValue));
-        } catch (err) {
-          console.error("Storage sync parse error:", err);
-        }
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-
-    // Subscribe to menu changes
-    const chMenu = supabase
-      .channel("menu-items-realtime-customer")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "menu_items" },
-        () => {
-          loadMenu();
-        },
-      )
-      .subscribe();
-
-    // Subscribe to real-time changes on ingredients
-    const chIng = supabase
-      .channel("ingredients-realtime-customer")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "ingredients" },
-        () => {
-          loadStock();
-        },
-      )
-      .subscribe();
-
-    // Subscribe to real-time changes on recipe items
-    const chRec = supabase
-      .channel("recipe_items-realtime-customer")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "recipe_items" },
-        () => {
-          loadStock();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      supabase.removeChannel(chMenu);
-      supabase.removeChannel(chIng);
-      supabase.removeChannel(chRec);
-    };
+    loadData();
   }, []);
 
   const checkOptionOutOfStock = (optionId: string) => {
@@ -868,7 +669,6 @@ function LiffApp() {
     const activeAddress = customAddress !== undefined ? customAddress : address;
 
     if (activeCart.length === 0) return;
-    // Unique order number with timestamp + random digits (avoids unique constraint violation in Postgres)
     const timeCode = Date.now().toString().slice(-4);
     const randCode = Math.floor(1000 + Math.random() * 9000);
     const orderNum = `#AK-${timeCode}${randCode}`;
@@ -903,15 +703,10 @@ function LiffApp() {
     const activeSubtotal = activeCart.reduce((s, l) => s + l.price * l.qty, 0);
     const activeDeliveryFee = activeOrderType === "delivery" ? 40 : 0;
 
-    // Valid UUID for both local state and Supabase record
     const orderId =
       typeof crypto?.randomUUID === "function"
         ? crypto.randomUUID()
-        : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0;
-            const v = c === "x" ? r : (r & 0x3) | 0x8;
-            return v.toString(16);
-          });
+        : `order-${Date.now()}`;
 
     const newOrder: OrderHistory = {
       id: orderId,
@@ -957,95 +752,35 @@ function LiffApp() {
         localStorage.setItem("ran-lung-get-tables", JSON.stringify(next));
         return next;
       });
-      // Update table status in Supabase to occupied
-      void (supabase as any)
-        .from("restaurant_tables")
-        .update({ status: "occupied" })
-        .eq("id", targetTableIdStr);
-
-      if (selectedTableObj?.label) {
-        void (supabase as any)
-          .from("restaurant_tables")
-          .update({ status: "occupied" })
-          .eq("label", selectedTableObj.label);
-      }
+      // Update in MongoDB
+      void updateMongoTableStatus({
+        data: { tableId: targetTableIdStr, status: "occupied" },
+      });
     }
 
-    // Push order to Supabase for real-time Staff Dashboard
-    const insertOrder = async () => {
-      let finalUserId = dbUser?.id;
-      let finalCustomerId = dbCustomer?.id;
-
-      if (!finalUserId || !finalCustomerId) {
-        try {
-          const guestPair = await getOrCreateGuestUserAndCustomer();
-          finalUserId = guestPair.user.id;
-          finalCustomerId = guestPair.customer.id;
-        } catch (err) {
-          console.error(
-            "Failed to resolve guest user/customer for Supabase order:",
-            err,
-          );
-        }
-      }
-
-      if (!finalUserId || !finalCustomerId) {
-        console.warn(
-          "Could not find any user or customer in Supabase. Order saved locally.",
-        );
-        return;
-      }
-
-      const { error: orderErr } = await supabase.from("orders").insert({
-        id: orderId,
-        order_number: orderNum,
-        user_id: finalUserId,
-        customer_id: finalCustomerId,
-        line_user_id: profile?.userId || null,
-        order_type: activeOrderType || "delivery",
-        status: "pending",
+    // Push order to MongoDB for real-time Staff Dashboard
+    void createMongoOrder({
+      data: {
+        orderNumber: orderNum,
+        orderType: activeOrderType || "delivery",
+        tableNumber: tableNumStr || (activeOrderType === "takeaway" ? takeawayQueueNum : null),
+        queueNumber: takeawayQueueNum,
+        deliveryAddress: activeOrderType === "delivery" ? activeAddress : null,
+        specialInstructions: takeawayQueueNum ? `คิวรับอาหาร: ${takeawayQueueNum}` : null,
+        items: newOrder.items.map((i) => ({
+          name: i.name,
+          qty: i.qty,
+          price: i.price,
+          image: i.image || null,
+        })),
         subtotal: activeSubtotal,
-        delivery_fee: activeDeliveryFee,
+        deliveryFee: activeDeliveryFee,
         total: activeSubtotal + activeDeliveryFee,
-        table_number:
-          tableNumStr || (activeOrderType === "takeaway" ? takeawayQueueNum : null),
-        delivery_address: activeOrderType === "delivery" ? activeAddress : null,
-        special_instructions: takeawayQueueNum
-          ? `คิวรับอาหาร: ${takeawayQueueNum}`
-          : null,
-        created_at: new Date().toISOString(),
-      });
-
-      if (orderErr) {
-        console.error("Failed to insert order in Supabase:", orderErr);
-        return;
-      }
-
-      const orderItems = newOrder.items.map((item) => ({
-        order_id: orderId,
-        item_id: item.name,
-        name: item.name,
-        image: item.image || null,
-        unit_price: item.price,
-        quantity: item.qty,
-        line_total: item.price * item.qty,
-        created_at: new Date().toISOString(),
-      }));
-
-      const { error: itemsErr } = await supabase
-        .from("order_items")
-        .insert(orderItems);
-      if (itemsErr) {
-        console.error("Failed to insert order items in Supabase:", itemsErr);
-      } else {
-        console.log(
-          "Order and order items successfully pushed to Supabase:",
-          orderNum,
-        );
-      }
-    };
-
-    void insertOrder();
+        status: "pending",
+        userId: currentUser?.id || null,
+        lineUserId: profile?.userId || null,
+      },
+    });
   };
 
   const resetAll = () => {
@@ -1054,7 +789,6 @@ function LiffApp() {
     setCartDrawer(false);
     setSelectedItem(null);
     setTab("home");
-    // Keep selectedTable, address, and deliveryMethod so the user can order more items without re-entering details.
     setShowAddressError(false);
     setShowTypeError(false);
   };
@@ -1296,13 +1030,8 @@ function LiffApp() {
               }}
               profile={profile}
               onLogout={async () => {
-                // Prevent flash during logout
                 setLiffReady(false);
-                // Remove guest token
-                localStorage.removeItem("ran-lung-get-guest");
-                // Sign out จาก Supabase Auth
-                await supabase.auth.signOut().catch(() => {});
-                // Sign out จาก LIFF (ถ้า login อยู่)
+                clearStoredUser();
                 try {
                   liffLogout();
                 } catch {
@@ -1327,7 +1056,7 @@ function LiffApp() {
           )}
         </AnimatePresence>
 
-        {/* Table Picker — rendered at root overlay level so it always covers everything */}
+        {/* Table Picker */}
         <AnimatePresence>
           {showTablePicker && (
             <TablePickerBottomSheet
@@ -1341,7 +1070,6 @@ function LiffApp() {
                 const tableIdStr = String(tableId);
                 const prevTableStr = prevTable ? String(prevTable) : null;
 
-                // Update local state immediately for both old and new tables
                 setTables((prev) => {
                   const updated = prev.map((t) => {
                     if (String(t.id) === tableIdStr)
@@ -1353,17 +1081,15 @@ function LiffApp() {
                   localStorage.setItem("ran-lung-get-tables", JSON.stringify(updated));
                   return updated;
                 });
-                // Update in Supabase (best-effort)
+
                 if (prevTableStr && prevTableStr !== tableIdStr) {
-                  void (supabase as any)
-                    .from("restaurant_tables")
-                    .update({ status: "available" })
-                    .eq("id", prevTableStr);
+                  void updateMongoTableStatus({
+                    data: { tableId: prevTableStr, status: "available" },
+                  });
                 }
-                void (supabase as any)
-                  .from("restaurant_tables")
-                  .update({ status: "occupied" })
-                  .eq("id", tableIdStr);
+                void updateMongoTableStatus({
+                  data: { tableId: tableIdStr, status: "occupied" },
+                });
 
                 setTimeout(() => {
                   setShowTablePicker(false);
@@ -1379,7 +1105,7 @@ function LiffApp() {
           {showSuccess && <SuccessFlash key="sf" />}
         </AnimatePresence>
 
-        {/* fixed cart bar inside app frame (constrained and centered) */}
+        {/* fixed cart bar inside app frame */}
         <AnimatePresence>
           {totalQty > 0 && tab !== "status" && (
             <motion.div

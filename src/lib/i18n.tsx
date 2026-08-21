@@ -33,7 +33,8 @@ if (typeof window !== "undefined") {
 // ─────────────────────────────────────────────────────────────
 const uiDictionary: Record<string, Record<Language, string>> = {
   // Navigation / Headers
-  "ร้านลุงเกตุ": { th: "ร้านลุงเกตุ", en: "Ran Lung Get", zh: "龙葛特餐馆" },
+  "Dineos": { th: "Dineos", en: "Dineos", zh: "Dineos" },
+  "ร้านลุงเกตุ": { th: "Dineos", en: "Dineos", zh: "Dineos" },
   "สั่งอาหารพรีเมียมผ่าน LINE LIFF": {
     th: "สั่งอาหารพรีเมียมผ่าน LINE LIFF",
     en: "Order premium food via LINE LIFF",
@@ -282,7 +283,8 @@ const uiDictionary: Record<string, Record<Language, string>> = {
   "เสร็จสมบูรณ์": { th: "เสร็จสมบูรณ์", en: "Completed", zh: "已完成" },
   "ติดตามสถานะ": { th: "ติดตามสถานะ", en: "Order Progress", zh: "进度追踪" },
   "ยกเลิกและขอคืนเงิน": { th: "ยกเลิกและขอคืนเงิน", en: "Cancel & Refund", zh: "取消并申请退款" },
-  "📞 ติดต่อร้านลุงเกตุ (ด่วน)": { th: "📞 ติดต่อร้านลุงเกตุ (ด่วน)", en: "📞 Contact Restaurant (Urgent)", zh: "📞 紧急联系餐厅" },
+  "📞 ติดต่อร้าน Dineos (ด่วน)": { th: "📞 ติดต่อร้าน Dineos (ด่วน)", en: "📞 Contact Dineos (Urgent)", zh: "📞 紧急联系 Dineos" },
+  "📞 ติดต่อร้านลุงเกตุ (ด่วน)": { th: "📞 ติดต่อร้าน Dineos (ด่วน)", en: "📞 Contact Dineos (Urgent)", zh: "📞 紧急联系 Dineos" },
   "ยกเลิกคำสั่งซื้อและขอคืนเงิน": { th: "ยกเลิกคำสั่งซื้อและขอคืนเงิน", en: "Cancel Order & Request Refund", zh: "取消订单并退款" },
   "เหตุผลในการยกเลิก": { th: "เหตุผลในการยกเลิก", en: "Cancellation Reason", zh: "取消原因" },
   "ข้อมูลการรับเงินคืน": { th: "ข้อมูลการรับเงินคืน", en: "Refund Account Details", zh: "退款收款信息" },

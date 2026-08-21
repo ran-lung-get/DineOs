@@ -1,4 +1,4 @@
-import { supabase } from "../supabase";
+import { getMongoDb } from "../mongodb";
 
 interface TranslateParams {
   text: string;
@@ -8,20 +8,25 @@ interface TranslateParams {
 
 export async function translateText({ text, sourceLang, targetLang }: TranslateParams) {
   const src = sourceLang === "auto" ? "" : sourceLang;
-  
-  // 1. Check cache first
   const cacheSourceLang = sourceLang === "auto" ? "auto" : sourceLang;
-  const { data: cached, error: cacheErr } = await supabase
-    .from("translation_cache")
-    .select("translated_text")
-    .eq("source_text", text)
-    .eq("source_lang", cacheSourceLang)
-    .eq("target_lang", targetLang)
-    .maybeSingle();
 
-  if (!cacheErr && cached) {
-    console.log("Translation cache hit!");
-    return { translatedText: cached.translated_text, cached: true };
+  // 1. Check cache first in MongoDB
+  try {
+    const db = await getMongoDb();
+    if (db) {
+      const cached = await db.collection("translation_cache").findOne({
+        source_text: text,
+        source_lang: cacheSourceLang,
+        target_lang: targetLang,
+      });
+
+      if (cached && cached.translated_text) {
+        console.log("Translation cache hit from MongoDB!");
+        return { translatedText: cached.translated_text, cached: true };
+      }
+    }
+  } catch (err) {
+    console.warn("MongoDB translation cache read error:", err);
   }
 
   let translatedText = "";
@@ -45,7 +50,7 @@ export async function translateText({ text, sourceLang, targetLang }: TranslateP
             target: targetLang,
             format: "text",
           }),
-        }
+        },
       );
 
       if (response.ok) {
@@ -125,7 +130,7 @@ Only output the exact translated text without any explanations, notes, or extra 
     try {
       console.log("Calling Free Google Translate API fallback...");
       const response = await fetch(
-        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src || "auto"}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src || "auto"}&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`,
       );
       if (response.ok) {
         const resJson = await response.json();
@@ -146,22 +151,32 @@ Only output the exact translated text without any explanations, notes, or extra 
     }
   }
 
-  // 4. Save to cache in Supabase
+  // 5. Save to cache in MongoDB
   if (translatedText) {
     try {
-      const { error: insertErr } = await supabase.from("translation_cache").insert({
-        source_text: text,
-        source_lang: cacheSourceLang,
-        target_lang: targetLang,
-        translated_text: translatedText,
-      });
-      if (insertErr) {
-        console.warn("Failed to write to translation cache (DB error):", insertErr.message);
-      } else {
-        console.log("Saved to translation cache.");
+      const db = await getMongoDb();
+      if (db) {
+        await db.collection("translation_cache").updateOne(
+          {
+            source_text: text,
+            source_lang: cacheSourceLang,
+            target_lang: targetLang,
+          },
+          {
+            $set: {
+              source_text: text,
+              source_lang: cacheSourceLang,
+              target_lang: targetLang,
+              translated_text: translatedText,
+              updated_at: new Date().toISOString(),
+            },
+          },
+          { upsert: true },
+        );
+        console.log("Saved to MongoDB translation cache.");
       }
     } catch (e) {
-      console.warn("Failed to write to translation cache:", e);
+      console.warn("Failed to write to MongoDB translation cache:", e);
     }
   }
 

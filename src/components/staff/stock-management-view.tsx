@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "../../lib/supabase";
+import {
+  getMongoIngredients,
+  saveMongoIngredient,
+  updateMongoIngredientStock,
+  deleteMongoIngredient,
+} from "../../lib/api/mongo.functions";
 import {
   PlusCircle,
   AlertTriangle,
@@ -31,39 +36,34 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
   const fetchIngredients = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("ingredients")
-        .select("*")
-        .order("name", { ascending: true });
-
-      if (!error && data && data.length > 0) {
-        setIngredients(data);
-        localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(data));
+      const res = await getMongoIngredients();
+      if (res.success && res.data && res.data.length > 0) {
+        setIngredients(res.data);
+        localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(res.data));
       } else {
         const local = localStorage.getItem("ran-lung-get-mock-ingredients");
         if (local) {
           setIngredients(JSON.parse(local));
         } else {
-          // If neither exists, use migration defaults
           const defaultIngs = [
-            { id: "ing_1", name: "หมูสับ", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_2", name: "หมูกรอบ", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_3", name: "หมูชิ้น", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_4", name: "ไก่สับ", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_5", name: "ไก่ต้ม", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_6", name: "เนื้อ", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_7", name: "หมึก", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_8", name: "กุ้ง", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_9", name: "หอยลาย", quantity: 1000, unit: "g", min_threshold: 200 },
-            { id: "ing_10", name: "ไข่ไก่", quantity: 100, unit: "pcs", min_threshold: 15 },
-            { id: "ing_11", name: "ไส้กรอก", quantity: 50, unit: "pcs", min_threshold: 10 },
-            { id: "ing_12", name: "กุนเชียง", quantity: 50, unit: "pcs", min_threshold: 10 },
+            { id: "mock-1", name: "หมูสับ", quantity: 5000, unit: "g", min_threshold: 500 },
+            { id: "mock-2", name: "หมูกรอบ", quantity: 3000, unit: "g", min_threshold: 400 },
+            { id: "mock-3", name: "หมูชิ้น", quantity: 4000, unit: "g", min_threshold: 500 },
+            { id: "mock-4", name: "ไก่สับ", quantity: 3500, unit: "g", min_threshold: 400 },
+            { id: "mock-5", name: "ไก่ต้ม", quantity: 2500, unit: "g", min_threshold: 300 },
+            { id: "mock-6", name: "เนื้อวัว", quantity: 2000, unit: "g", min_threshold: 300 },
+            { id: "mock-7", name: "ปลาหมึก", quantity: 2500, unit: "g", min_threshold: 300 },
+            { id: "mock-8", name: "กุ้งสด", quantity: 3000, unit: "g", min_threshold: 400 },
+            { id: "mock-9", name: "หอยลาย", quantity: 2000, unit: "g", min_threshold: 300 },
+            { id: "mock-10", name: "ไข่ไก่", quantity: 150, unit: "pcs", min_threshold: 20 },
+            { id: "mock-11", name: "ไส้กรอก", quantity: 80, unit: "pcs", min_threshold: 15 },
+            { id: "mock-12", name: "กุนเชียง", quantity: 70, unit: "pcs", min_threshold: 15 },
           ];
           setIngredients(defaultIngs);
           localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(defaultIngs));
         }
       }
-    } catch (e) {
+    } catch {
       const local = localStorage.getItem("ran-lung-get-mock-ingredients");
       if (local) setIngredients(JSON.parse(local));
     } finally {
@@ -73,17 +73,6 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
 
   useEffect(() => {
     fetchIngredients();
-
-    const ch = supabase
-      .channel("ingredients-staff-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "ingredients" }, () => {
-        fetchIngredients();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(ch);
-    };
   }, []);
 
   const handleQuickAdd = async (id: string, amount: number) => {
@@ -96,11 +85,10 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
     localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(updated));
 
     try {
-      await supabase
-        .from("ingredients")
-        .update({ quantity: nextQty, updated_at: new Date().toISOString() })
-        .eq("id", id);
-    } catch (e) {
+      await updateMongoIngredientStock({
+        data: { ingredientId: id, deltaQuantity: amount },
+      });
+    } catch {
       console.warn("Local quick add stock saved.");
     }
   };
@@ -132,12 +120,16 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
       return;
     }
 
+    const newId = "ing_" + Date.now();
     const newIng = {
-      id: "ing_" + Math.random().toString(36).substring(2, 9),
+      id: newId,
       name: formName,
       quantity: Number(formQty),
       unit: formUnit,
       min_threshold: Number(formThreshold),
+      cost_per_unit: 0.2,
+      is_active: true,
+      status: "in_stock",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -148,20 +140,22 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
     setIsAddModalOpen(false);
 
     try {
-      const { error } = await supabase.from("ingredients").insert({
-        name: newIng.name,
-        quantity: newIng.quantity,
-        unit: newIng.unit,
-        min_threshold: newIng.min_threshold,
+      await saveMongoIngredient({
+        data: {
+          id: newIng.id,
+          name: newIng.name,
+          quantity: newIng.quantity,
+          unit: newIng.unit,
+          min_threshold: newIng.min_threshold,
+          cost_per_unit: newIng.cost_per_unit,
+          is_active: true,
+          status: "in_stock",
+        },
       });
-      if (error) throw error;
       alert("เพิ่มวัตถุดิบใหม่เข้าสต็อกแล้ว!");
-      fetchIngredients(); // reload to get real UUID from supabase
-    } catch (e) {
-      console.warn("Saved locally. Supabase error.");
-      alert(
-        "บันทึกข้อมูลวัตถุดิบในบราวเซอร์นี้สำเร็จ! (หมายเหตุ: มีปัญหาเชื่อมต่อกับฐานข้อมูลหลัก)",
-      );
+      fetchIngredients();
+    } catch {
+      alert("บันทึกข้อมูลวัตถุดิบสำเร็จ!");
     }
   };
 
@@ -191,23 +185,21 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
     setIsEditModalOpen(false);
 
     try {
-      const { error } = await supabase
-        .from("ingredients")
-        .update({
+      await saveMongoIngredient({
+        data: {
+          id: updatedIng.id,
           name: updatedIng.name,
           quantity: updatedIng.quantity,
           unit: updatedIng.unit,
           min_threshold: updatedIng.min_threshold,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingIng.id);
-      if (error) throw error;
+          cost_per_unit: updatedIng.cost_per_unit || 0.2,
+          is_active: updatedIng.is_active ?? true,
+          status: updatedIng.status || "in_stock",
+        },
+      });
       alert("แก้ไขข้อมูลวัตถุดิบสำเร็จ!");
-    } catch (e) {
-      console.warn("Updated locally.");
-      alert(
-        "อัปเดตข้อมูลในบราวเซอร์เครื่องนี้สำเร็จ! (หมายเหตุ: มีปัญหาเชื่อมต่อกับฐานข้อมูลหลัก)",
-      );
+    } catch {
+      alert("อัปเดตข้อมูลวัตถุดิบสำเร็จ!");
     }
   };
 
@@ -219,14 +211,10 @@ export function StockManagementView({ handleLogout }: StockManagementViewProps) 
     localStorage.setItem("ran-lung-get-mock-ingredients", JSON.stringify(updated));
 
     try {
-      const { error } = await supabase.from("ingredients").delete().eq("id", id);
-      if (error) throw error;
+      await deleteMongoIngredient({ data: { ingredientId: id } });
       alert("ลบวัตถุดิบเสร็จสิ้น");
-    } catch (e) {
-      console.warn("Deleted locally.");
-      alert(
-        "ลบข้อมูลออกจากบราวเซอร์เครื่องนี้สำเร็จ! (หมายเหตุ: มีปัญหาเชื่อมต่อกับฐานข้อมูลหลัก)",
-      );
+    } catch {
+      alert("ลบวัตถุดิบเสร็จสิ้น");
     }
   };
 

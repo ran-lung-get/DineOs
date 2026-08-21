@@ -3,16 +3,14 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
-  useRouter,
   useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
 import appCss from "../styles.css?url";
-import { supabase } from "../lib/supabase";
 import { LanguageProvider } from "../lib/i18n";
 
 function NotFoundComponent() {
@@ -38,62 +36,67 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
-  const router = useRouter();
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
-        </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <h1 className="text-2xl font-bold text-destructive">Something went wrong</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <div className="mt-6 flex justify-center gap-4">
           <button
-            onClick={() => {
-              router.invalidate();
-              reset();
-            }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 cursor-pointer"
+            onClick={reset}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
             Try again
           </button>
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             Go home
-          </a>
+          </Link>
         </div>
       </div>
     </div>
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+}>()({
   head: () => ({
     meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "ร้านลุงเกตุ | Ran Lung Get" },
-      { name: "description", content: "ระบบสั่งอาหารออนไลน์ ร้านลุงเกตุ อาหารตามสั่ง รวดเร็ว สดใหม่ รสชาติเข้มข้นถึงเครื่อง" },
-      { name: "author", content: "ร้านลุงเกตุ" },
-      { property: "og:title", content: "ร้านลุงเกตุ | Ran Lung Get" },
-      { property: "og:description", content: "ระบบสั่งอาหารออนไลน์ ร้านลุงเกตุ อาหารตามสั่ง รวดเร็ว สดใหม่ รสชาติเข้มข้นถึงเครื่อง" },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-      { name: "twitter:title", content: "ร้านลุงเกตุ | Ran Lung Get" },
-      { name: "twitter:description", content: "ระบบสั่งอาหารออนไลน์ ร้านลุงเกตุ อาหารตามสั่ง รวดเร็ว สดใหม่ รสชาติเข้มข้นถึงเครื่อง" },
+      {
+        charSet: "utf-8",
+      },
+      {
+        name: "viewport",
+        content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
+      },
+      {
+        title: "Dineos - ระบบจัดการร้านอาหารและสั่งอาหาร",
+      },
+      {
+        name: "description",
+        content: "Dineos · Smart Restaurant Ordering & Management System",
+      },
     ],
     links: [
-      { rel: "stylesheet", href: appCss },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "preconnect",
+        href: "https://fonts.googleapis.com",
+      },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Prompt:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap",
+      },
+      {
+        rel: "stylesheet",
+        href: appCss,
       },
     ],
   }),
@@ -119,48 +122,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
   const routerState = useRouterState();
-
-  useEffect(() => {
-    // 🚀 ทำให้ทั้งเว็บเป็น Real-Time: คอยดักจับการเปลี่ยนแปลงของทุกตารางในฐานข้อมูล
-    const channel = supabase
-      .channel("global-db-changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public" },
-        (payload: any) => {
-          console.log("🔄 Database Changed:", payload);
-          // ทันทีที่มีอะไรเปลี่ยน ให้ดึงข้อมูลใหม่ทั้งหมด (ทำให้ UI อัปเดตทันที)
-          queryClient.invalidateQueries();
-
-          // Force logout in real-time if the user's role or active status changed
-          if (payload.table === "users" && payload.eventType === "UPDATE") {
-            supabase.auth.getUser().then(({ data: { user } }: { data: { user: any } }) => {
-              if (user && payload.new && payload.new.auth_user_id === user.id) {
-                if (payload.new.is_active === false) {
-                  alert("สิทธิ์การใช้งานของคุณถูกระงับ (Account Suspended)");
-                  supabase.auth.signOut().then(() => {
-                    window.location.href = "/login";
-                  });
-                } else if (payload.old && payload.new.role !== payload.old.role) {
-                  alert("บทบาทของคุณถูกเปลี่ยนแปลง กรุณาเข้าสู่ระบบใหม่ (Role Changed)");
-                  supabase.auth.signOut().then(() => {
-                    window.location.href = "/login";
-                  });
-                }
-              }
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [queryClient]);
-
   const isNavigating = routerState.status === "pending";
 
   return (
@@ -180,7 +142,6 @@ function RootComponent() {
         </AnimatePresence>
 
         <div className="min-h-screen w-full">
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
         </div>
       </LanguageProvider>

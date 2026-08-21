@@ -412,7 +412,7 @@ export function StatusScreen({
               href="tel:0891234567"
               className="w-full py-3.5 rounded-full font-bold text-sm bg-white border border-[#ece4d6] text-[#002e47] cursor-pointer active:scale-95 flex items-center justify-center gap-2 hover:bg-slate-50 transition no-underline block text-center"
             >
-              <span>{t("📞 ติดต่อร้านลุงเกตุ (ด่วน)")}</span>
+              <span>{t("📞 ติดต่อร้าน Dineos (ด่วน)")}</span>
             </a>
           </div>
         </div>
