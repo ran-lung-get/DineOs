@@ -1,6 +1,7 @@
-VITE_SUPABASE_URL=https://vshamisexmjcymsdyhym.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_viPzmZUj0b2sbHlyWAnz5Q_PntK9O03
-VITE_LIFF_ID=2010518546-73jQGjK6
-VITE_STRIPE_PUBLISHABLE_KEY=pk_test_51TrXtA2KeZWTo1LQbwicV0zJiUHRH7nsBF1fOS31fLCA8Fd7B77GY0E23Av5VLKCjyoCMMFhrg2tUBqZTU46jnSB00QGIeneyf
-STRIPE_SECRET_KEY=sk_test_51TrXtA2KeZWTo1LQwWIiEzOd9fSqFyHtiYV4byMxILkfVJomd6IRHQjhCmxf6y85Jh3CcjafsBL8Q0gRUNzUdZrP00ihxEUNJf
-VITE_STRIPE_WEBHOOK_SECRET=whsec_uKb0fomBo4VMeqetLEhZWMI2AM9WH8dx
+# DineOs Context & Notes
+
+DineOs is a smart restaurant ordering and management solution built with TanStack Start, React 19, MongoDB, and Tailwind CSS.
+
+### Environment Configuration
+Please configure your environment variables in `.env` (refer to `.env.example`).
+Never commit real secrets or production credentials into git repositories.

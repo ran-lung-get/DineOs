@@ -21,6 +21,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+scratch/
 
 # Wrangler / Cloudflare
 .wrangler/
