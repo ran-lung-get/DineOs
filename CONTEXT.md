@@ -1,7 +1,8 @@
-# DineOs Context & Notes
-
-DineOs is a smart restaurant ordering and management solution built with TanStack Start, React 19, MongoDB, and Tailwind CSS.
-
-### Environment Configuration
-Please configure your environment variables in `.env` (refer to `.env.example`).
-Never commit real secrets or production credentials into git repositories.
+MONGODB_URI=mongodb+srv://07steakgamebro_db_user:YQqRT2zXpWclKJub@deve.bgussno.mongodb.net/?appName=deve
+MONGODB_DB_NAME=dineos_db
+VITE_GOOGLE_CLIENT_ID=673642972616-mnfsl018okeoqhchdc9iq9npj3a4mlvu.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=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
+VITE_LIFF_ID=2010518546-73jQGjK6
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_51TrXtA2KeZWTo1LQbwicV0zJiUHRH7nsBF1fOS31fLCA8Fd7B77GY0E23Av5VLKCjyoCMMFhrg2tUBqZTU46jnSB00QGIeneyf
+STRIPE_SECRET_KEY=sk_test_51TrXtA2KeZWTo1LQwWIiEzOd9fSqFyHtiYV4byMxILkfVJomd6IRHQjhCmxf6y85Jh3CcjafsBL8Q0gRUNzUdZrP00ihxEUNJf
+VITE_STRIPE_WEBHOOK_SECRET=whsec_uKb0fomBo4VMeqetLEhZWMI2AM9WH8dx
